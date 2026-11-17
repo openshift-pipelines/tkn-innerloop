@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" width="720" height="540" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#24283b"/>
+      <stop offset="100%" stop-color="#1f2335"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bb9af7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0af68" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#e0af68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="712" height="532" rx="28" fill="url(#bgGrad)" stroke="#414868" stroke-width="2"/>
+
+  <circle cx="360" cy="360" r="220" fill="url(#glowAmber)"/>
+
+  <!-- Row 1: Runnable -->
+  <rect x="52" y="58" width="616" height="122" rx="22" fill="#1a1b26" stroke="#9ece6a" stroke-width="4"/>
+  
+  <circle cx="118.0" cy="119.0" r="34.0" fill="#1a1b26" stroke="#9ece6a" stroke-width="5"/>
+  <path d="M 103.7 120.0 L 114.6 130.6 L 133.6 108.8" fill="none" stroke="#9ece6a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="180" y="114" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="#c0caf5">run</text>
+  <rect x="180" y="134" width="236" height="14" rx="7" fill="#9ece6a" opacity="0.65"/>
+  <rect x="502" y="90" width="132" height="58" rx="14" fill="#24283b" stroke="#7dcfff" stroke-width="3"/>
+  <text x="568" y="127" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="23" font-weight="700" fill="#7dcfff">image</text>
+
+  <!-- Row 2: Skipped -->
+  <rect x="52" y="208" width="616" height="122" rx="22" fill="#1a1b26" stroke="#414868" stroke-width="4"/>
+  <circle cx="118" cy="269" r="34" fill="#1f2335" stroke="#7f88b3" stroke-width="5"/>
+  <path d="M 102 269 H 134 M 124 257 L 136 269 L 124 281" fill="none" stroke="#7f88b3" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="180" y="264" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="#7f88b3">skip</text>
+  <rect x="180" y="284" width="186" height="14" rx="7" fill="#7f88b3" opacity="0.45"/>
+
+  <!-- Row 3: Unresolved blocks scope -->
+  <rect x="52" y="358" width="616" height="124" rx="22" fill="#1a1b26" stroke="#e0af68" stroke-width="5"/>
+  
+  <circle cx="118.0" cy="420.0" r="34.0" fill="#1a1b26" stroke="#e0af68" stroke-width="5"/>
+  <path d="M 108.0 410.0 A 11 11 0 1 1 124.0 422.0 C 119.0 425.0 118.0 428.0 118.0 433.0" fill="none" stroke="#e0af68" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="118.0" cy="442.0" r="3.5" fill="#e0af68"/>
+
+  <text x="180" y="414" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="#e0af68">unresolved</text>
+  <rect x="180" y="434" width="216" height="14" rx="7" fill="#e0af68" opacity="0.65"/>
+
+  <!-- Stop gate icon on right of row 3 -->
+  <rect x="492" y="388" width="142" height="64" rx="14" fill="#e0af68" fill-opacity="0.16" stroke="#e0af68" stroke-width="4"/>
+  <circle cx="528" cy="420" r="14" fill="none" stroke="#e0af68" stroke-width="4"/>
+  <line x1="518" y1="430" x2="538" y2="410" stroke="#e0af68" stroke-width="4"/>
+  <text x="586" y="428" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="23" font-weight="700" fill="#e0af68">block</text>
+
+</svg>

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" width="720" height="540" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#24283b"/>
+      <stop offset="100%" stop-color="#1f2335"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bb9af7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0af68" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#e0af68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="712" height="532" rx="28" fill="url(#bgGrad)" stroke="#414868" stroke-width="2"/>
+
+  <circle cx="360" cy="280" r="240" fill="url(#glowViolet)"/>
+
+  <rect x="48" y="56" width="624" height="428" rx="24" fill="#1a1b26" stroke="#414868" stroke-width="4"/>
+  <path d="M 48 128 H 672" stroke="#414868" stroke-width="3"/>
+
+  <circle cx="92" cy="92" r="10" fill="#f7768e"/>
+  <circle cx="124" cy="92" r="10" fill="#e0af68"/>
+  <circle cx="156" cy="92" r="10" fill="#9ece6a"/>
+  <text x="360" y="100" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="24" font-weight="700" fill="#c0caf5">validate --diff</text>
+
+  <rect x="82" y="160" width="556" height="96" rx="16" fill="#f7768e" fill-opacity="0.14" stroke="#f7768e" stroke-width="4"/>
+  <text x="112" y="217" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="32" font-weight="700" fill="#f7768e">-</text>
+  <text x="152" y="216" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="24" font-weight="700" fill="#f7768e">base_sha..HEAD</text>
+  <rect x="406" y="200" width="196" height="14" rx="7" fill="#f7768e" opacity="0.45"/>
+
+  <path d="M 360 268 V 298" stroke="#bb9af7" stroke-width="5" stroke-linecap="round"/>
+  <polygon points="360,312 345,290 375,290" fill="#bb9af7"/>
+
+  <rect x="82" y="320" width="556" height="126" rx="16" fill="#9ece6a" fill-opacity="0.14" stroke="#9ece6a" stroke-width="4"/>
+  <text x="112" y="372" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="32" font-weight="700" fill="#9ece6a">+</text>
+  <text x="152" y="371" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="24" font-weight="700" fill="#9ece6a">$BASE_SHA</text>
+  <rect x="328" y="356" width="274" height="14" rx="7" fill="#9ece6a" opacity="0.55"/>
+  <text x="152" y="416" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="23" font-weight="700" fill="#7dcfff">git ls-files</text>
+  <rect x="352" y="401" width="216" height="14" rx="7" fill="#7dcfff" opacity="0.55"/>
+
+</svg>

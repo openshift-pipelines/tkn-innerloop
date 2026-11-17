@@ -138,3 +138,13 @@ Recordings and slide previews also go under `~/tmp/sharei/tkn-innerloop/shots/`.
 - [Agent skill](https://share.chmouel.com/public/bCKjBFak-pNzlQabwE7dJQ/SKILL.md)
 
 Anyone with these links can read them. Public links expire after 30 days.
+
+## Publishing the deck
+
+`presentation.md` references pictures in `art/` (drawn by `art/make_art.py`). A public sharei page only
+loads inline images, so build the inlined copy first, then upload it under the deck's name:
+
+```sh
+python3 art/build.py
+sharec dist/presentation.public.md -p <project> -n presentation.md --replace -y --public-ttl 0
+```

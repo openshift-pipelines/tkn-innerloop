@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" width="720" height="540" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#24283b"/>
+      <stop offset="100%" stop-color="#1f2335"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bb9af7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0af68" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#e0af68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="712" height="532" rx="28" fill="url(#bgGrad)" stroke="#414868" stroke-width="2"/>
+
+  <circle cx="190" cy="270" r="180" fill="url(#glowBlue)"/>
+  <circle cx="525" cy="270" r="190" fill="url(#glowViolet)"/>
+
+  <!-- Left: Local checks -->
+  <rect x="38" y="64" width="286" height="412" rx="24" fill="#1a1b26" stroke="#7aa2f7" stroke-width="4"/>
+  
+  <rect x="84.0" y="138.0" width="194.0" height="124.0" rx="16" fill="#1f2335" stroke="#7aa2f7" stroke-width="5"/>
+  <path d="M 60.7 266.0 H 301.3 L 283.3 284.0 H 78.7 Z" fill="#24283b" stroke="#7aa2f7" stroke-width="5" stroke-linejoin="round"/>
+
+  
+  <circle cx="181.0" cy="196.0" r="30.0" fill="#1a1b26" stroke="#9ece6a" stroke-width="5"/>
+  <path d="M 168.4 197.0 L 178.0 206.2 L 194.8 187.0" fill="none" stroke="#9ece6a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="98" y="322" width="166" height="14" rx="7" fill="#7aa2f7" opacity="0.65"/>
+  <rect x="118" y="352" width="126" height="14" rx="7" fill="#7f88b3" opacity="0.45"/>
+  <text x="181" y="432" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="#c0caf5">local checks</text>
+
+  <!-- Right: Cluster CI -->
+  <rect x="360" y="64" width="322" height="412" rx="24" fill="#1a1b26" stroke="#bb9af7" stroke-width="4"/>
+  
+  <g transform="translate(521.0,184.0) scale(1.12)" opacity="1.0">
+    <path d="M -72 34 H 68 A 34 34 0 0 0 74 -32 A 48 48 0 0 0 -14 -54 A 42 42 0 0 0 -76 -12 A 32 32 0 0 0 -72 34 Z" fill="#1f2335" stroke="#bb9af7" stroke-width="5" stroke-linejoin="round"/>
+  </g>
+
+
+  <!-- Key / Secret icon inside cloud area -->
+  <circle cx="476" cy="182" r="14" fill="none" stroke="#e0af68" stroke-width="5"/>
+  <path d="M 490 182 H 524 V 194 M 510 182 V 192" fill="none" stroke="#e0af68" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Release shield icon inside cloud area -->
+  <path d="M 558 156 L 586 166 V 188 C 586 204 572 214 558 220 C 544 214 530 204 530 188 V 166 Z" fill="none" stroke="#7dcfff" stroke-width="4" stroke-linejoin="round"/>
+
+  <!-- Labeled rows under cloud -->
+  <rect x="400" y="276" width="242" height="48" rx="12" fill="#1f2335" stroke="#e0af68" stroke-width="3"/>
+  <circle cx="430" cy="300" r="8" fill="#e0af68"/>
+  <text x="454" y="308" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" font-weight="600" fill="#e0af68">secrets</text>
+
+  <rect x="400" y="340" width="242" height="48" rx="12" fill="#1f2335" stroke="#7dcfff" stroke-width="3"/>
+  <circle cx="430" cy="364" r="8" fill="#7dcfff"/>
+  <text x="454" y="372" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" font-weight="600" fill="#7dcfff">releases</text>
+
+  <text x="521" y="432" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="#c0caf5">cluster CI</text>
+
+</svg>

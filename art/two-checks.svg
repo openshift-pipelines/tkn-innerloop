@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" width="720" height="540" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#24283b"/>
+      <stop offset="100%" stop-color="#1f2335"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bb9af7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0af68" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#e0af68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="712" height="532" rx="28" fill="url(#bgGrad)" stroke="#414868" stroke-width="2"/>
+
+  <circle cx="205" cy="235" r="175" fill="url(#glowRed)"/>
+  <circle cx="515" cy="235" r="175" fill="url(#glowRed)"/>
+
+  <!-- Card 1: codespell -->
+  <rect x="44" y="60" width="302" height="292" rx="22" fill="#1a1b26" stroke="#f7768e" stroke-width="4"/>
+  <text x="195" y="116" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="25" font-weight="700" fill="#c0caf5">codespell</text>
+  <rect x="74" y="146" width="242" height="88" rx="14" fill="#1f2335" stroke="#414868" stroke-width="3"/>
+  <text x="195" y="198" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="28" font-weight="700" fill="#f7768e">"teh"</text>
+  <path d="M 140 212 Q 158 224 176 212 T 212 212 T 248 212" fill="none" stroke="#f7768e" stroke-width="4" stroke-linecap="round"/>
+  
+  <circle cx="195.0" cy="292.0" r="32.0" fill="#1a1b26" stroke="#f7768e" stroke-width="5"/>
+  <path d="M 183.5 280.5 L 206.5 303.5 M 206.5 280.5 L 183.5 303.5" fill="none" stroke="#f7768e" stroke-width="6" stroke-linecap="round"/>
+
+
+  <!-- Card 2: test name convention -->
+  <rect x="374" y="60" width="302" height="292" rx="22" fill="#1a1b26" stroke="#f7768e" stroke-width="4"/>
+  <text x="525" y="116" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="25" font-weight="700" fill="#c0caf5">test name</text>
+  <rect x="404" y="146" width="242" height="88" rx="14" fill="#1f2335" stroke="#414868" stroke-width="3"/>
+  <text x="525" y="198" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="25" font-weight="700" fill="#f7768e">TestBad_Name</text>
+  <line x1="434" y1="214" x2="616" y2="214" stroke="#f7768e" stroke-width="4" stroke-linecap="round"/>
+  
+  <circle cx="525.0" cy="292.0" r="32.0" fill="#1a1b26" stroke="#f7768e" stroke-width="5"/>
+  <path d="M 513.5 280.5 L 536.5 303.5 M 536.5 280.5 L 513.5 303.5" fill="none" stroke="#f7768e" stroke-width="6" stroke-linecap="round"/>
+
+
+  <!-- Bottom warning bar: t.Errorf -->
+  <rect x="44" y="382" width="632" height="98" rx="22" fill="#1a1b26" stroke="#e0af68" stroke-width="4"/>
+  <polygon points="114,406 144,456 84,456" fill="none" stroke="#e0af68" stroke-width="5" stroke-linejoin="round"/>
+  <line x1="114" y1="422" x2="114" y2="437" stroke="#e0af68" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="114" cy="447" r="3.5" fill="#e0af68"/>
+  <text x="176" y="440" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="26" font-weight="700" fill="#e0af68">t.Errorf</text>
+  <rect x="330" y="424" width="184" height="14" rx="7" fill="#e0af68" opacity="0.55"/>
+  <text x="590" y="440" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="25" font-weight="700" fill="#e0af68">warn</text>
+
+</svg>

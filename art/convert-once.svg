@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" width="720" height="540" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#24283b"/>
+      <stop offset="100%" stop-color="#1f2335"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bb9af7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0af68" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#e0af68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="712" height="532" rx="28" fill="url(#bgGrad)" stroke="#414868" stroke-width="2"/>
+
+  <circle cx="360" cy="270" r="220" fill="url(#glowViolet)"/>
+
+  <!-- Left: Repo YAML + helpers -->
+  
+  <path d="M 52.0 128.0 A 16 16 0 0 1 68.0 112.0 H 178.0 L 204.0 138.0 V 232.0 A 16 16 0 0 1 188.0 248.0 H 68.0 A 16 16 0 0 1 52.0 232.0 Z" fill="#1a1b26" stroke="#7aa2f7" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M 178.0 112.0 V 130.0 A 8 8 0 0 0 186.0 138.0 H 204.0" fill="none" stroke="#7aa2f7" stroke-width="4" stroke-linejoin="round"/>
+
+  <text x="128" y="190" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="24" font-weight="700" fill="#7aa2f7">YAML</text>
+
+  
+  <path d="M 52.0 302.0 A 16 16 0 0 1 68.0 286.0 H 178.0 L 204.0 312.0 V 406.0 A 16 16 0 0 1 188.0 422.0 H 68.0 A 16 16 0 0 1 52.0 406.0 Z" fill="#1a1b26" stroke="#7dcfff" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M 178.0 286.0 V 304.0 A 8 8 0 0 0 186.0 312.0 H 204.0" fill="none" stroke="#7dcfff" stroke-width="4" stroke-linejoin="round"/>
+
+  <text x="128" y="364" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="24" font-weight="700" fill="#7dcfff">scripts</text>
+
+  <!-- Arrows into Agent -->
+  <path d="M 216 180 L 284 234" stroke="#7aa2f7" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 216 354 L 284 300" stroke="#7dcfff" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Center: Agent -->
+  
+  <line x1="360.0" y1="183.0" x2="360.0" y2="209.0" stroke="#bb9af7" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="360.0" cy="177.0" r="9" fill="#bb9af7"/>
+  <rect x="291.0" y="252.0" width="10" height="32" rx="5" fill="#bb9af7"/>
+  <rect x="419.0" y="252.0" width="10" height="32" rx="5" fill="#bb9af7"/>
+  <rect x="301.0" y="209.0" width="118.0" height="118.0" rx="26" fill="#1a1b26" stroke="#bb9af7" stroke-width="5"/>
+  <circle cx="338.0" cy="260.0" r="9" fill="#7dcfff"/>
+  <circle cx="382.0" cy="260.0" r="9" fill="#7dcfff"/>
+  <path d="M 340.0 290.0 H 380.0" stroke="#bb9af7" stroke-width="5" stroke-linecap="round"/>
+
+
+  <!-- Arrow to Reviewed Plan -->
+  <path d="M 436 268 H 498" stroke="#bb9af7" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="514,268 490,252 490,284" fill="#bb9af7"/>
+
+  <!-- Right: Reviewed Plan -->
+  
+  <path d="M 524.0 162.0 A 16 16 0 0 1 540.0 146.0 H 642.0 L 672.0 176.0 V 374.0 A 16 16 0 0 1 656.0 390.0 H 540.0 A 16 16 0 0 1 524.0 374.0 Z" fill="#1a1b26" stroke="#9ece6a" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M 642.0 146.0 V 168.0 A 8 8 0 0 0 650.0 176.0 H 672.0" fill="none" stroke="#9ece6a" stroke-width="4" stroke-linejoin="round"/>
+
+  <line x1="552" y1="216" x2="642" y2="216" stroke="#c0caf5" stroke-width="5" stroke-linecap="round"/>
+  <line x1="552" y1="248" x2="626" y2="248" stroke="#7f88b3" stroke-width="5" stroke-linecap="round"/>
+  <line x1="552" y1="280" x2="634" y2="280" stroke="#7f88b3" stroke-width="5" stroke-linecap="round"/>
+  
+  <circle cx="598.0" cy="338.0" r="30.0" fill="#1a1b26" stroke="#9ece6a" stroke-width="5"/>
+  <path d="M 585.4 339.0 L 595.0 348.2 L 611.8 329.0" fill="none" stroke="#9ece6a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+
+</svg>

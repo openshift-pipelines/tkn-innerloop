@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" width="720" height="540" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#24283b"/>
+      <stop offset="100%" stop-color="#1f2335"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bb9af7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0af68" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#e0af68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="712" height="532" rx="28" fill="url(#bgGrad)" stroke="#414868" stroke-width="2"/>
+
+  <circle cx="315" cy="255" r="235" fill="url(#glowViolet)"/>
+  <circle cx="315" cy="255" r="160" fill="url(#glowCyan)"/>
+
+  <!-- Faded distant cloud -->
+  
+  <g transform="translate(600.0,96.0) scale(0.84)" opacity="0.55">
+    <path d="M -72 34 H 68 A 34 34 0 0 0 74 -32 A 48 48 0 0 0 -14 -54 A 42 42 0 0 0 -76 -12 A 32 32 0 0 0 -72 34 Z" fill="#1a1b26" stroke="#7f88b3" stroke-width="5" stroke-linejoin="round" stroke-dasharray="10 8"/>
+  </g>
+
+  <text x="600" y="164" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="22" font-weight="600" fill="#7f88b3" opacity="0.85">cluster CI</text>
+  <path d="M 480 165 L 526 132" stroke="#414868" stroke-width="4" stroke-dasharray="8 8" stroke-linecap="round"/>
+
+  <!-- Outer loop arc (top/right) -->
+  <path d="M 155 182 A 178 178 0 1 1 142 308" fill="none" stroke="#bb9af7" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="155,158 132,192 174,194" fill="#bb9af7"/>
+
+  <!-- Inner accent arc (bottom) -->
+  <path d="M 468 332 A 178 178 0 0 1 172 358" fill="none" stroke="#7dcfff" stroke-width="6" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- Central laptop -->
+  
+  <rect x="202.0" y="173.0" width="226.0" height="144.0" rx="16" fill="#1a1b26" stroke="#7aa2f7" stroke-width="5"/>
+  <path d="M 174.9 321.0 H 455.1 L 437.1 339.0 H 192.9 Z" fill="#24283b" stroke="#7aa2f7" stroke-width="5" stroke-linejoin="round"/>
+
+  <text x="236" y="226" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="24" font-weight="700" fill="#bb9af7">$&gt;</text>
+  <rect x="276" y="210" width="122" height="14" rx="7" fill="#c0caf5" opacity="0.85"/>
+  <rect x="236" y="246" width="138" height="12" rx="6" fill="#7dcfff" opacity="0.75"/>
+  <rect x="236" y="274" width="94" height="12" rx="6" fill="#9ece6a" opacity="0.85"/>
+
+  <!-- Plan document on left of loop -->
+  
+  <path d="M 86.0 214.0 A 16 16 0 0 1 102.0 198.0 H 156.0 L 178.0 220.0 V 292.0 A 16 16 0 0 1 162.0 308.0 H 102.0 A 16 16 0 0 1 86.0 292.0 Z" fill="#1a1b26" stroke="#bb9af7" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M 156.0 198.0 V 212.0 A 8 8 0 0 0 164.0 220.0 H 178.0" fill="none" stroke="#bb9af7" stroke-width="4" stroke-linejoin="round"/>
+
+  <text x="132" y="238" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="20" font-weight="700" fill="#bb9af7">plan</text>
+  <line x1="106" y1="258" x2="158" y2="258" stroke="#bb9af7" stroke-width="4" stroke-linecap="round"/>
+  <line x1="106" y1="276" x2="150" y2="276" stroke="#7f88b3" stroke-width="4" stroke-linecap="round"/>
+  <line x1="106" y1="294" x2="142" y2="294" stroke="#9ece6a" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Check badge on right of loop -->
+  
+  <circle cx="482.0" cy="255.0" r="32.0" fill="#1a1b26" stroke="#9ece6a" stroke-width="5"/>
+  <path d="M 468.6 256.0 L 478.8 265.9 L 496.7 245.4" fill="none" stroke="#9ece6a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+
+  <!-- Bottom pill label cleanly separated from loop -->
+  <rect x="155" y="452" width="320" height="50" rx="14" fill="#1a1b26" stroke="#bb9af7" stroke-width="3"/>
+  <text x="315" y="485" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="23" font-weight="700" fill="#c0caf5">local edit loop · no model</text>
+
+</svg>

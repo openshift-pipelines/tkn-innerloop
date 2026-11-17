@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" width="720" height="540" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#24283b"/>
+      <stop offset="100%" stop-color="#1f2335"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bb9af7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0af68" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#e0af68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="712" height="532" rx="28" fill="url(#bgGrad)" stroke="#414868" stroke-width="2"/>
+
+  <circle cx="485" cy="270" r="220" fill="url(#glowCyan)"/>
+  <circle cx="165" cy="270" r="150" fill="url(#glowViolet)"/>
+
+  
+  <path d="M 54.0 150.0 A 16 16 0 0 1 70.0 134.0 H 216.0 L 254.0 172.0 V 390.0 A 16 16 0 0 1 238.0 406.0 H 70.0 A 16 16 0 0 1 54.0 390.0 Z" fill="#1a1b26" stroke="#bb9af7" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M 216.0 134.0 V 164.0 A 8 8 0 0 0 224.0 172.0 H 254.0" fill="none" stroke="#bb9af7" stroke-width="4" stroke-linejoin="round"/>
+
+  <text x="154" y="210" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="25" font-weight="700" fill="#bb9af7">plan.json</text>
+  <line x1="90" y1="250" x2="218" y2="250" stroke="#bb9af7" stroke-width="5" stroke-linecap="round"/>
+  <line x1="90" y1="284" x2="194" y2="284" stroke="#7f88b3" stroke-width="5" stroke-linecap="round"/>
+  <line x1="90" y1="318" x2="208" y2="318" stroke="#7f88b3" stroke-width="5" stroke-linecap="round"/>
+  <line x1="90" y1="352" x2="168" y2="352" stroke="#9ece6a" stroke-width="5" stroke-linecap="round"/>
+
+  <path d="M 272 270 H 344" stroke="#7dcfff" stroke-width="6" stroke-linecap="round"/>
+  <polygon points="362,270 336,252 336,288" fill="#7dcfff"/>
+
+  
+  <rect x="374.0" y="114.0" width="292.0" height="312.0" rx="22" fill="#1a1b26" stroke="#7dcfff" stroke-width="5"/>
+  <rect x="386.0" y="126.0" width="268.0" height="288.0" rx="14" fill="none" stroke="#7dcfff" stroke-width="2" opacity="0.35"/>
+  <line x1="406.0" y1="138.0" x2="406.0" y2="402.0" stroke="#7dcfff" stroke-width="4" stroke-linecap="round" opacity="0.28"/>
+  <line x1="463.0" y1="138.0" x2="463.0" y2="402.0" stroke="#7dcfff" stroke-width="4" stroke-linecap="round" opacity="0.28"/>
+  <line x1="520.0" y1="138.0" x2="520.0" y2="402.0" stroke="#7dcfff" stroke-width="4" stroke-linecap="round" opacity="0.28"/>
+  <line x1="577.0" y1="138.0" x2="577.0" y2="402.0" stroke="#7dcfff" stroke-width="4" stroke-linecap="round" opacity="0.28"/>
+  <line x1="634.0" y1="138.0" x2="634.0" y2="402.0" stroke="#7dcfff" stroke-width="4" stroke-linecap="round" opacity="0.28"/>
+
+  <rect x="410" y="164" width="220" height="148" rx="16" fill="#1f2335" stroke="#414868" stroke-width="3"/>
+  <text x="436" y="216" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="25" font-weight="700" fill="#7dcfff">/workspace</text>
+  <rect x="436" y="242" width="156" height="14" rx="7" fill="#c0caf5" opacity="0.75"/>
+  <rect x="436" y="272" width="118" height="14" rx="7" fill="#9ece6a" opacity="0.85"/>
+
+  <text x="495" y="380" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="#c0caf5">Docker</text>
+  
+  <circle cx="622.0" cy="382.0" r="38.0" fill="#1a1b26" stroke="#9ece6a" stroke-width="5"/>
+  <path d="M 606.0 383.0 L 618.2 394.9 L 639.5 370.6" fill="none" stroke="#9ece6a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+
+</svg>

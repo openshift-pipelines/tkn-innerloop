@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" width="720" height="540" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#24283b"/>
+      <stop offset="100%" stop-color="#1f2335"/>
+    </linearGradient>
+    <radialGradient id="glowViolet" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#bb9af7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#bb9af7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7aa2f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowGreen" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9ece6a" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#9ece6a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f7768e" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#f7768e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0af68" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#e0af68" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dcfff" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#7dcfff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="4" y="4" width="712" height="532" rx="28" fill="url(#bgGrad)" stroke="#414868" stroke-width="2"/>
+
+  <circle cx="190" cy="270" r="185" fill="url(#glowGreen)"/>
+  <circle cx="530" cy="270" r="185" fill="url(#glowRed)"/>
+
+  <rect x="38" y="62" width="300" height="416" rx="24" fill="#1a1b26" stroke="#414868" stroke-width="3"/>
+  <rect x="382" y="62" width="300" height="416" rx="24" fill="#1a1b26" stroke="#f7768e" stroke-width="4"/>
+
+  <line x1="360" y1="92" x2="360" y2="448" stroke="#414868" stroke-width="3" stroke-dasharray="10 10"/>
+
+  
+  <rect x="88.0" y="136.0" width="200.0" height="128.0" rx="16" fill="#1f2335" stroke="#9ece6a" stroke-width="5"/>
+  <path d="M 64.0 268.0 H 312.0 L 294.0 286.0 H 82.0 Z" fill="#24283b" stroke="#9ece6a" stroke-width="5" stroke-linejoin="round"/>
+
+  <text x="188" y="208" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="26" font-weight="700" fill="#9ece6a">go test</text>
+  
+  <circle cx="188.0" cy="350.0" r="36.0" fill="#1a1b26" stroke="#9ece6a" stroke-width="5"/>
+  <path d="M 172.9 351.0 L 184.4 362.2 L 204.6 339.2" fill="none" stroke="#9ece6a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="188" y="432" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="#9ece6a">PASS</text>
+
+  
+  <path d="M 428.0 124.0 A 16 16 0 0 1 444.0 108.0 H 604.0 L 636.0 140.0 V 266.0 A 16 16 0 0 1 620.0 282.0 H 444.0 A 16 16 0 0 1 428.0 266.0 Z" fill="#1f2335" stroke="#f7768e" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M 604.0 108.0 V 132.0 A 8 8 0 0 0 612.0 140.0 H 636.0" fill="none" stroke="#f7768e" stroke-width="4" stroke-linejoin="round"/>
+
+  <text x="532" y="156" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="22" font-weight="700" fill="#c0caf5">linter.yaml</text>
+  <rect x="454" y="178" width="144" height="12" rx="6" fill="#f7768e" opacity="0.85"/>
+  <rect x="454" y="204" width="120" height="12" rx="6" fill="#e0af68" opacity="0.85"/>
+  <rect x="454" y="230" width="152" height="12" rx="6" fill="#7f88b3" opacity="0.65"/>
+  <rect x="454" y="254" width="96" height="10" rx="5" fill="#7f88b3" opacity="0.45"/>
+
+  
+  <circle cx="532.0" cy="350.0" r="36.0" fill="#1a1b26" stroke="#f7768e" stroke-width="5"/>
+  <path d="M 519.0 337.0 L 545.0 363.0 M 545.0 337.0 L 519.0 363.0" fill="none" stroke="#f7768e" stroke-width="6" stroke-linecap="round"/>
+
+  <text x="532" y="432" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700" fill="#f7768e">CI rules</text>
+
+</svg>
