@@ -4,9 +4,8 @@ Instead of re-implementing Kubernetes locally, this PoC pairs an **Agent Skill (
 
 ## Public Links
 
-- **Animated Presentation Deck (`presentation.md`)**: [Open on sharei](https://share.chmouel.com/public/T-iBled8FjZNJrCzNoPrEw/presentation.md#slide=1)
-- **Recorded Demo Video (MP4 with Elevator Music)**: <https://share.chmouel.com/public/jZRofFOy4r48bL-fgQtGUw/tkn-innerloop-demo.mp4>
-- **Agent Skill (`SKILL.md`)**: <https://share.chmouel.com/public/Kp0H0sAZIfR7NAipLx3THg/SKILL.md>
+- **Walkthrough deck (playable)**: <https://share.chmouel.com/public/YUzvD7r-N9fGd6w4V5Urdg/presentation.md#slide=1>
+- **Agent skill**: <https://share.chmouel.com/public/RgQdIIxsMlDuMKM50EYCvA/SKILL.md>
 
 ## How It Works (Plain English)
 
@@ -59,10 +58,10 @@ flowchart LR
 - `SKILL.md` & `skills/tekton-innerloop/SKILL.md` — The Agent Skill instructing coding agents how to inspect, generate, and run `.tekton` inner-loop checks and honor `(run-local)` / `(skip-local)` descriptions.
 - `presentation.md` — Animated `aniflow` slide deck explaining the architecture and workflow.
 - `bin/tkn-innerloop` — CLI with `inspect`, `generate` (`--runtime host|podman|docker`), `run` (`--steps`, `--fail-fast`), and `skills` (`show|install`).
-- `demo/demo.tape` — VHS tape used to record the end-to-end execution against `.tekton/linter.yaml` and the `--ai` Dockerfile fallback.
+- `demo/demo.tape` — VHS tape for the terminal recording (not published; rebuild with `record.sh`).
 - `demo/record.sh` — Rebuilds the recording and its soundtrack (`PAC_REPO=/path/to/pipelines-as-code ./demo/record.sh`).
 - `demo/banner.sh` — Terminal explanation banners used in the recording.
-- `demo/generate_elevator_music.py` — Synthesizes the Bossa-Nova / Rhodes lounge background track.
+- `demo/generate_jazz.py` — Synthesizes the jazz swing backing track.
 - `demo/toggle-defects.sh` — Helper script that injects and fixes the `check-test-conventions` + `codespell` violations during the recording.
 
 </details>

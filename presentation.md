@@ -1,248 +1,250 @@
 ---
-title: Fast Inner-Loop Tekton Validation
-author: Pipelines-as-Code Team
+title: The inner loop eats the pipeline
+author: Chmouel Boudjnah
 date: November 2026
 style: keynote
 theme: tokyo-night
 accent: violet
 font: modern
-footer: Tekton Inner-Loop PoC
+footer: tkn-innerloop · Pipelines as Code
 numbers: true
-presentation: true   # sharei: show the "Play presentation" button
 transition: slide
 autoplay: true
+presentation: true
 ---
 
-# Fast Inner-Loop Tekton Validation
+# The inner loop eats the pipeline
 
-Validate coding agent edits against your real `.tekton/` pipelines in 3 seconds on your laptop—without running Kubernetes.
-
-<!-- notes:
-Welcome! This deck walks through how we give coding agents fast, exact Tekton validation on a laptop without spinning up a local Kubernetes cluster.
--->
-
-<!-- slide: bg=muted reveal -->
-## Why coding agents break CI
-
-- **Agents guess local checks** — They run `go test` or `ruff`, see green in 10ms, and think the code is ready.
-- **CI runs stricter rules** — Your `.tekton` pipeline passes custom flags, convention scripts, and commit linters.
-- **Five minutes to fail** — You push a PR, wait for pods to schedule, and fail on a rule the agent never ran.
+Running the real Tekton checks on a laptop, in seconds, without a cluster.
 
 <!-- notes:
-Agents already know how to run generic linters or unit tests. The problem is that CI runs different flags, custom bash scripts, or specific scanners.
+The whole idea in one line: the checks that decide whether your pull request is green should run where the agent is typing, not five minutes later on a cluster.
 -->
 
-<!-- slide: layout=stat bg=gradient -->
-## The 80 / 20 inner-loop insight
+<!-- slide: layout=quote bg=accent -->
+> “Even if you solve 40% of it, that might be useful still.”
 
-**80%** of Tekton PR steps only need your local files and standard CLI tools.
+Siamak, on how much of the pipeline we could move into the inner loop.
 
 <!-- notes:
-We do not need to solve 100% of Kubernetes locally. If we bring 80% of the pipeline checks into the inner loop, most broken PRs disappear before git push.
+This is the permission slip for the whole project. We are not rebuilding Kubernetes. We are taking the slice that never needed a cluster.
 -->
 
-## Today vs. the Inner-Loop Agent
+## Agents pass locally, then fail in CI
+
+- **Generic checks** — `go test`, `ruff`, markdown lint. They pass, so the agent commits.
+- **Your checks** — the pipeline runs its own flags, its own shell scripts, its own conventions.
+- **Five minutes later** — pods schedule, `git-clone` runs, and the PR goes red on a rule nobody ran.
+
+<!-- notes:
+Nothing is wrong with the agent here. It simply does not know your pipeline, and reading it out loud is the missing step.
+-->
+
+<!-- slide: layout=stat bg=muted -->
+## The slice that never needed a cluster
+
+**80%** of the pull-request steps only read your source tree.
+
+<!-- notes:
+On pipelines-as-code's own linter pipeline that is 12 of 15 steps: codespell, shellcheck, yamllint, ruff, markdownlint, vale, goreleaser check, the test-naming convention, the commit validator. All of them need files and a binary, nothing else.
+-->
+
+<!-- slide: layout=section bg=gradient -->
+## The walkthrough
+
+<!-- notes:
+Four moves: read the pipeline, sort it, bind the cluster variables, run what is left. Then one escape hatch for the odd pipelines.
+-->
+
+## Two ways to find out you broke it
 
 ```mermaid
 flowchart LR
-  Agent@{ img: "/icons/agent.svg", label: "Coding Agent", w: 48, h: 48, constraint: "on" }
-  Local@{ img: "/icons/terminal.svg", label: "tkn-innerloop", w: 48, h: 48, constraint: "on" }
-  PR@{ img: "/icons/pull-request.svg", label: "Pull Request", w: 48, h: 48, constraint: "on" }
-  Cluster@{ img: "/icons/cluster.svg", label: "Tekton Cluster", w: 48, h: 48, constraint: "on" }
-  Fail@{ img: "/icons/fail.svg", label: "Red PR (5m)", w: 48, h: 48, constraint: "on" }
-  Pass@{ img: "/icons/success.svg", label: "Green PR", w: 48, h: 48, constraint: "on" }
+  Agent@{ img: "/icons/agent.svg", label: "Agent", w: 48, h: 48, constraint: "on" }
+  PR@{ img: "/icons/pull-request.svg", label: "Pull request", w: 48, h: 48, constraint: "on" }
+  CI@{ img: "/icons/cluster.svg", label: "Tekton CI", w: 48, h: 48, constraint: "on" }
+  Red@{ img: "/icons/fail.svg", label: "Red", w: 48, h: 48, constraint: "on" }
+  Local@{ img: "/icons/terminal.svg", label: "Inner loop", w: 48, h: 48, constraint: "on" }
+  Green@{ img: "/icons/success.svg", label: "Green", w: 48, h: 48, constraint: "on" }
 
-  Agent naive@-->|generic go test| PR
-  PR --> Cluster
-  Cluster bad@-->|custom linter fails| Fail
-  Fail -->|fix & re-push| Agent
+  Agent --> PR --> CI
+  CI red@--> Red
+  Red --> Agent
+  Agent loop@--> Local
+  Local back@--> Agent
+  Local pr@--> PR
+  CI green@--> Green
 
-  Agent smart@-->|validate locally| Local
-  Local fix@-->|fails in 1.8s| Agent
-  Local ok@-->|12/12 green in 3s| PR
-  Cluster good@-->|all checks pass| Pass
-
-%% play: Without tkn-innerloop (5m loop)
-%% skip Local Pass
-%% Agent -> PR @naive : push | The agent runs a basic go test locally and opens a PR
-%% PR -> Cluster : webhook
-%% wait 1200 | Waiting 5 minutes for cluster pods and git-clone...
-%% Cluster -> Fail @bad : red | Custom Tekton test-convention script fails on the cluster
-%% Fail -> Agent : logs | The agent has to start over after waiting on CI
-%% play: With tkn-innerloop (3s loop)
-%% skip Fail
-%% Agent -> Local @smart : edit | The agent runs tkn-innerloop before committing
-%% Local -> Agent @fix : 1.8s fail | Caught locally in 1.8 seconds! The agent fixes the test name
-%% Agent -> Local @smart : re-run
-%% Local -> PR @ok : 3.1s green | All 12 Tekton steps pass locally in 3.1 seconds
-%% PR -> Cluster : webhook
-%% Cluster -> Pass @good : green | The cluster outer-loop pipeline turns green on the first try
+%% play: The slow way
+%% skip Local Green
+%% Agent -> PR : push | The agent runs a generic test locally and pushes
+%% PR -> CI : event
+%% wait 1200 | Pods schedule, the repository is cloned again
+%% CI -> Red @red : red | A convention script fails, five minutes after the push
+%% Red -> Agent : logs | The agent starts over with a five-minute loop
+%% play: The fast way
+%% skip Red Green
+%% Agent -> Local @loop : edit | The agent validates before it pushes
+%% Local -> Agent @back : 1.8s fail | The exact CI script fails in under two seconds
+%% Agent -> Local @loop : fix
+%% Local -> PR @pr : green | Only green edits reach the pull request
+%% PR -> CI : event
+%% CI -> Green @green : green | The cluster pipeline agrees on the first try
 ```
 
 <!-- notes:
-Compare the two stories: in the first story, the agent pushes right after `go test` and waits 5 minutes for a red PR. In the second story, `tkn-innerloop` catches the failure in 1.8 seconds on the laptop.
+Same agent, same code, same rules. The only difference is when the rules run. Space steps through both stories.
 -->
 
-<!-- slide: bg=accent -->
-## How it works under the hood
-
-<!-- notes:
-Let's look at the four steps that make this work without running a Kubernetes control plane locally.
--->
-
-## Four steps from Tekton YAML to local execution
+## Read the pipeline as a recipe
 
 ```mermaid
 flowchart LR
   YAML@{ img: "/icons/file-code.svg", label: ".tekton/*.yaml", w: 48, h: 48, constraint: "on" }
-  Inspect@{ img: "/icons/filter.svg", label: "1. Classify", w: 48, h: 48, constraint: "on" }
-  Rewrite@{ img: "/icons/config.svg", label: "2. Rewrite Vars", w: 48, h: 48, constraint: "on" }
-  Runtime@{ img: "/icons/decision.svg", label: "3. Runtime", w: 48, h: 48, constraint: "on" }
-  Host@{ img: "/icons/laptop.svg", label: "Host Mode", w: 48, h: 48, constraint: "on" }
-  Podman@{ img: "/icons/container.svg", label: "Podman Mode", w: 48, h: 48, constraint: "on" }
-  Green@{ img: "/icons/check.svg", label: "4. Agent Loop", w: 48, h: 48, constraint: "on" }
-  Outer@{ img: "/icons/cloud.svg", label: "Skip Outer Loop", w: 48, h: 48, constraint: "on" }
+  Sort@{ img: "/icons/filter.svg", label: "Sort steps", w: 48, h: 48, constraint: "on" }
+  Inner@{ img: "/icons/task.svg", label: "12 need files", w: 48, h: 48, constraint: "on" }
+  Outer@{ img: "/icons/cloud.svg", label: "3 need a cluster", w: 48, h: 48, constraint: "on" }
+  Bind@{ img: "/icons/config.svg", label: "Bind variables", w: 48, h: 48, constraint: "on" }
+  Run@{ img: "/icons/check.svg", label: "Run it", w: 48, h: 48, constraint: "on" }
 
-  YAML --> Inspect
-  Inspect -->|12 inner steps| Rewrite
-  Inspect -->|3 cluster steps| Outer
-  Rewrite --> Runtime
-  Runtime host@-->|fast| Host
-  Runtime pod@-->|isolated| Podman
-  Host --> Green
-  Podman --> Green
+  YAML --> Sort
+  Sort --> Inner
+  Sort --> Outer
+  Inner --> Bind --> Run
 
-%% play: Host inner-loop translation
-%% skip Podman
-%% YAML -> Inspect : linter.yaml | Read the real .tekton/linter.yaml recipe from the repository
-%% Inspect -> Outer : skip 3 | Skip git-clone and cluster-secret tasks
-%% Inspect -> Rewrite : keep 12 | Keep the 12 deterministic linter and convention steps
-%% Rewrite -> Runtime : bind paths | Replace $(workspaces.source.path) and PaC {{ ... }} variables with local Git state
-%% Runtime -> Host @host : native | Run exact CI commands and flags against the worktree
-%% Host -> Green : 3.1s | All 12 steps finish in 3.1 seconds
-%% play: Podman container translation
-%% skip Host Outer
-%% YAML -> Inspect : linter.yaml
-%% Inspect -> Rewrite : keep 12
-%% Rewrite -> Runtime : bind paths
-%% Runtime -> Podman @pod : image | Launch podman run --rm -v $WORKSPACE:/workspace with each step's exact container image
-%% Podman -> Green : isolated | Identical container image without Kubernetes overhead
+%% play: From YAML to a green light
+%% YAML -> Sort : one file | The pipeline is read, never executed as Kubernetes objects
+%% Sort -> Outer : skip | Cloning, caches, signing and deploys stay on the cluster
+%% Sort -> Inner : keep | Linters, conventions and unit tests only need the source tree
+%% Inner -> Bind : rewrite | Two cluster placeholders become local Git facts
+%% Bind -> Run : 12 steps | The exact commands run against the working tree
 ```
 
 <!-- notes:
-1. Read `.tekton/*.yaml` as a recipe.
-2. Separate inner-loop checks from outer-loop cluster plumbing.
-3. Rewrite workspace and Pipelines-as-Code variables.
-4. Run either natively on the host or inside Podman containers.
+The sorting is not magic and it is not a language model: descriptions, annotations, images and the shell scripts themselves carry the answer. Authors can also say it outright.
 -->
 
 <!-- slide: layout=columns reveal -->
-## Step 1: Separate inner loop from outer loop
+## What stays, what goes
 
-### Inner Loop (Run Locally)
+### Runs on your laptop
 
-- **Linters & formatting** — `codespell`, `shellcheck`, `yamllint`, `ruff`, `markdownlint`, `vale`.
-- **Repo conventions** — Custom test naming, assertion rules, and `gitlint` commit checks.
-- **Explicit hints** — Honors `(run-local)` in step descriptions or annotations.
+- **Spell and syntax** — codespell, shellcheck, yamllint, ruff, markdownlint, vale.
+- **Conventions** — test naming, assertions, conventional commits.
+- **Unit tests** — the same runner and the same flags as the pipeline.
 
 <!-- column -->
 
-### Outer Loop (Leave to Cluster)
+### Stays on the cluster
 
-- **Source & cache plumbing** — `git-clone`, `cache-fetch`, and `cache-upload` StepActions.
-- **Cluster secrets & root mounts** — Steps needing cluster tokens or writing to `/usr/bin`.
-- **Release & deploy** — Image signing, SBOMs, Goreleaser pushes, and Cloudflare deploys.
+- **Source and caches** — `git-clone`, `cache-fetch`, `cache-upload`. You already have the files.
+- **Secrets** — tokens that only exist in the namespace.
+- **Shipping** — signed images, SBOMs, releases, docs deploys.
 
 <!-- notes:
-You don't need `git-clone` locally because your edited files are already on disk. And you don't need to build SBOMs or deploy docs on every code edit.
+The right column is not junk. It is simply not part of a code edit, and no amount of local cleverness should fake a signature.
 -->
 
-## Step 2: Translate cluster variables to laptop paths
+## Two placeholders do most of the work
 
-```bash {1-3|5-7|9-12|all}
-# Tekton Workspace -> Local Git Worktree
-WORKSPACE="$(git rev-parse --show-toplevel)"
+```bash {1-2|4-5|all}
+WORKSPACE="$(git rev-parse --show-toplevel)"   # was $(workspaces.source.path)
 cd "$WORKSPACE"
 
-# Pipelines-as-Code PR Event -> Local Git Branch Range
-EVENT_TYPE="pull_request"
-BASE_SHA="$(git merge-base HEAD main)"
+EVENT="pull_request"                            # was {{ headers['X-Github-Event'] }}
+BASE="$(git merge-base HEAD main)"              # was {{ body.pull_request.base.sha }}
 
-# Exact CI script from .tekton/linter.yaml (step: check-test-conventions)
-files=$({ git diff --name-only "${BASE_SHA}" -- '*.go'; \
-          git ls-files --others --exclude-standard -- '*.go'; } \
-        | sort -u | grep -v '^vendor/' | grep '_test\.go$')
+codespell -d docs/content pkg test              # unchanged: the flags are the point
 ```
 
 <!-- notes:
-Tekton steps use `$(workspaces.source.path)` and Pipelines-as-Code uses `{{ body.pull_request.base.sha }}`. Rewriting those two things lets PR-only scripts run before a commit even exists.
+The commands are untouched on purpose. The flags are what CI disagrees with you about, so the local run has to use the same flags, not a friendlier version.
 -->
 
-## Step 3: Real test on Pipelines-as-Code
+<!-- slide: bg=muted -->
+## What it caught on a real repo
 
-- **What the agent wrote** — A new test `TestInnerLoop_ConfigValidation` using `t.Errorf` and a comment typo (`teh`).
-- **Standard `go test`** — Passes in **0.01s** (`ok .../pkg/params`). A normal agent stops here and pushes!
-- **`tkn-innerloop run`** — Runs `.tekton/linter.yaml` locally and catches **both** CI failures in **1.82s**.
-- **Fix & re-verify** — The agent renames the test, switches to `assert.Equal`, and passes all **12/12 steps in 3.13s**.
+A new test named `TestInnerLoop_ConfigValidation`, using `t.Errorf` and a `teh` typo.
+
+- **`go test`** — green in 11 ms.
+- **The Tekton steps** — two failures in 1.8 s: the naming convention and the spell checker.
 
 <!-- notes:
-This is real output from running `tkn-innerloop` on the `pipelines-as-code` repository's `.tekton/linter.yaml`.
+This is the whole argument in one example. The generic check has no opinion about pascal case or spelling in comments, and your pipeline does.
 -->
 
-## Step 4: Ship the Skill inside the CLI
-
-- **Self-contained CLI + Skill** — `tkn-innerloop skills install` drops `SKILL.md` straight into `.agents/skills/`.
-- **Zero Kubernetes tax** — Works with native host binaries for speed or `podman run`/`docker run` for container parity.
-- **Links** — [Watch Recorded Demo (MP4)](https://share.chmouel.com/public/jZRofFOy4r48bL-fgQtGUw/tkn-innerloop-demo.mp4) · [Agent Skill (`SKILL.md`)](https://share.chmouel.com/public/Kp0H0sAZIfR7NAipLx3THg/SKILL.md)
+<!-- slide: layout=section bg=accent -->
+## The escape hatch
 
 <!-- notes:
-Following the Android CLI pattern we discussed in the meeting, the CLI can print or install the Agent Skill directly so coding agents always stay in sync.
+Rules cover the common shape. Real pipelines also carry remote step actions, cluster secrets, generated caches and custom images, so there has to be a way out that is not "give up".
 -->
 
-<!-- slide: bg=accent -->
-## Step 5: When the rules are not enough, ask an agent
-
-<!-- notes:
-Rules cover linters and convention scripts. Real pipelines also carry remote StepActions, cluster secrets, caches and generated code, so we need an escape hatch.
--->
-
-## The AI fallback: YAML in, Dockerfile out
+## When the rules run out, ask an agent
 
 ```mermaid
 flowchart LR
   YAML@{ img: "/icons/file-code.svg", label: "go.yaml", w: 48, h: 48, constraint: "on" }
-  Rules@{ img: "/icons/filter.svg", label: "Rule engine", w: 48, h: 48, constraint: "on" }
+  Rules@{ img: "/icons/filter.svg", label: "Rules", w: 48, h: 48, constraint: "on" }
   Odd@{ img: "/icons/warning.svg", label: "Too custom", w: 48, h: 48, constraint: "on" }
   Agent@{ img: "/icons/agent.svg", label: "pi + DeepSeek", w: 48, h: 48, constraint: "on" }
-  Dockerfile@{ img: "/icons/container.svg", label: "Dockerfile", w: 48, h: 48, constraint: "on" }
-  Run@{ img: "/icons/terminal.svg", label: "docker run", w: 48, h: 48, constraint: "on" }
-  Green@{ img: "/icons/success.svg", label: "Lint + tests", w: 48, h: 48, constraint: "on" }
+  File@{ img: "/icons/container.svg", label: "Dockerfile", w: 48, h: 48, constraint: "on" }
+  Done@{ img: "/icons/success.svg", label: "Same 12 checks", w: 48, h: 48, constraint: "on" }
 
   YAML --> Rules
-  Rules -->|lint, tests, conventions| Dockerfile
-  Rules -->|remote steps, secrets, caches| Odd
+  Rules known@--> Done
+  Rules --> Odd
   Odd --> Agent
-  Agent --> Dockerfile
-  Agent --> Run
-  Dockerfile --> Green
-  Run --> Green
+  Agent --> File
+  File --> Done
 
-%% play: Known steps, translated by rules
-%% skip Odd Agent Run
-%% YAML -> Rules : 15 steps | Read the pipeline once
-%% Rules -> Dockerfile : known | Linters, tests and convention scripts are translated deterministically
-%% Dockerfile -> Green : docker build | Multi-stage build reproduces the exact CI images and flags
-%% play: Odd steps, translated by the agent
-%% skip Dockerfile
+%% play: Rules first
+%% skip Odd Agent
+%% YAML -> Rules : 15 steps | A known pipeline is translated without a model in the loop
+%% Rules -> Done @known : exact flags | Same images, same commands, nothing inferred
+%% play: Then the agent
+%% skip Done
 %% YAML -> Rules : 15 steps
-%% Rules -> Odd : unsupported | Remote StepActions, cluster secrets and caches cannot be rewritten by rules
-%% Odd -> Agent : yaml | The whole pipeline is handed to a coding agent with no tools
-%% wait 800 | About five seconds of thinking
-%% Agent -> Run : script | A ready docker run script, or a Dockerfile with the same images
-%% Run -> Green : pass | Same linters, same flags, no cluster
+%% Rules -> Odd : stuck | Remote steps, cached toolchains and cluster tokens
+%% Odd -> Agent : whole yaml | One prompt, no tools, five seconds of thinking
+%% wait 700 | The agent only reads and writes
+%% Agent -> File : dockerfile | A multi-stage build with the pipeline's own images
+%% File -> Done : build | The checks run the same way, with or without a cluster
 ```
 
 <!-- notes:
-The fallback is opt-in: `--ai`. We demo it with `.tekton/go.yaml`, which needs gotestsum, a Go cache and a cluster token, so the agent writes a multi-stage Dockerfile for the unittest and lint steps. The model is chosen with `--model` or `TKN_INNERLOOP_AI_MODEL`; here it is DeepSeek V4.1 Flash on enmaas.
+Opt-in with --ai, model chosen with --model or an environment variable. No tools means it cannot wander off and edit your repo; it reads the YAML and writes the artifact.
 -->
 
+## Say it in the pipeline, not in a prompt
+
+- **`(run-local)`** in a step's description — keep this in the fast loop.
+- **`(skip-local)`** — runnable, but pointless on every edit. Signing, SBOMs, deploys.
+- **No marker** — the classifier guesses from the image and the script, and says why.
+
+<!-- notes:
+The author already knows which steps are release chores. Writing it in the file beats teaching every agent the same folklore, and it survives when the pipeline changes.
+-->
+
+<!-- slide: bg=muted -->
+## What I would build next
+
+- **A local transcript** — feed past runs back in so translations get sharper instead of generic.
+- **Ship it in the CLI** — `tkn local` with the skill embedded, the way Android ships its skills.
+- **Evals, not vibes** — a corpus of pipelines as the regression suite for every classifier change.
+
+<!-- notes:
+The first two are cheap. The third is what turns a demo into something a customer can trust unattended.
+-->
+
+## Try it
+
+- **`tkn-innerloop inspect .tekton/linter.yaml`** — see what is runnable before you run anything.
+- **`tkn-innerloop run`** — the exact steps, in seconds.
+- **`--ai`** — a Dockerfile when the rules get stuck.
+
+Code and the agent skill: the `tkn-innerloop` repository.
+
+<!-- notes:
+If someone only remembers one command, it should be inspect: it turns an argument about classification into a table you can both read.
+-->
