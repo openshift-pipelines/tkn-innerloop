@@ -1,9 +1,10 @@
 source: tekton/ci/jobs/e2e-kind.yaml
 pac: false
 steps:
-  clone-repo/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  clone-repo/clone:
+    image: ghcr.io/tektoncd/github.com/tektoncd/pipeline/cmd/git-init:v0.18.1
+    defined_in:
+    - bundle:ghcr.io/tektoncd/catalog/upstream/tasks/git-batch-merge@sha256:7dd503d75fe0d5b37520040a3c67130e5941bde4f5c0a781eea5c85110b02040#task/git-batch-merge
   check-name-matches/check-name:
     image: docker.io/library/alpine
     defined_in:
@@ -16,16 +17,17 @@ steps:
     image: docker.io/library/alpine:3.15.3
   e2e-tests/kind:
     image: ghcr.io/tektoncd/plumbing/kind-e2e:latest
-  upload-logs/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  upload-logs/upload:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:310.0.0@sha256:cb03669fcdb9191d55a6200f2911fff3baec0b8c39b156d95b68aabe975ac506
+    defined_in:
+    - bundle:ghcr.io/tektoncd/catalog/upstream/tasks/gcs-upload@sha256:6f606e1fe0ffc3a9146a37a447b58596487382775e31bb9f8dd17829c21215c9#task/gcs-upload
     finally: true
 scope:
   local:
+  - clone-repo/clone
   - check-name-matches/check-name
   - check-git-files-changed/check-files-changed
   - e2e-tests/make-artifacts-folder
   cluster:
-    clone-repo/task: external reference
     e2e-tests/kind: runs the image entrypoint
-    upload-logs/task: runs after the pipeline
+    upload-logs/upload: runs after the pipeline

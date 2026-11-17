@@ -8,6 +8,7 @@ import runpy
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,8 +22,20 @@ GLOBALS = MODULE["run_plan"].__globals__
 CORPUS = Path(__file__).resolve().parent / "corpus"
 
 
+def clear_bundle_memos(test):
+    for name in ("_bundle_digests", "_bundle_failures"):
+        memo = patch.dict(GLOBALS[name], clear=True)
+        memo.start()
+        test.addCleanup(memo.stop)
+
+
+def offline_skopeo(*args, **kwargs):
+    raise GLOBALS["BundleError"]("offline: skopeo " + " ".join(args))
+
+
 class InnerloopTests(unittest.TestCase):
     def setUp(self):
+        clear_bundle_memos(self)
         self.temp = tempfile.TemporaryDirectory(prefix="innerloop-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -449,7 +462,7 @@ class InnerloopTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--tools") + 1], "read,grep,find,ls")
         self.assertEqual(cmd[cmd.index("--model") + 1], "haiku")
         self.assertIn("--offline", cmd)
-        self.assertNotIn("OMITTED_SCRIPT", cmd[-1])
+        self.assertNotIn("OMITTED_SCRIPT", agent.call_args.args[3])
         plan = json.loads(self.plan_file.read_text())
         self.assertEqual(
             plan["inputs"]["pipeline.yaml"], MODULE["digest"](self.pipeline)
@@ -478,7 +491,7 @@ class InnerloopTests(unittest.TestCase):
         ]
         for model, thinking in tests:
             with self.subTest(model=model):
-                cmd = MODULE["pi_command"]("prompt", model)
+                cmd = MODULE["pi_command"](model)
                 index = cmd.index("--model")
                 self.assertEqual(cmd[index - len(thinking):index], thinking)
                 self.assertEqual(cmd.count("--thinking"), len(thinking) // 2)
@@ -489,8 +502,8 @@ class InnerloopTests(unittest.TestCase):
         agent = Mock(side_effect=[rejected, self.good_proposal()])
         plan = self.build(agent)
         self.assertEqual(agent.call_count, 2)
-        self.assertIn("previous answer was rejected", agent.call_args.args[0][-1])
-        self.assertIn("invalid plan JSON", agent.call_args.args[0][-1])
+        self.assertIn("previous answer was rejected", agent.call_args.args[3])
+        self.assertIn("invalid plan JSON", agent.call_args.args[3])
         self.assertEqual(plan["scope"], ["checks/check"])
 
     def test_invalid_plan_is_retried_then_gives_up_after_three_attempts(self):
@@ -517,7 +530,7 @@ class InnerloopTests(unittest.TestCase):
         ]
         agent = Mock(side_effect=[bad, self.good_proposal()])
         self.build(agent)
-        sent = agent.call_args.args[0][-1]
+        sent = agent.call_args.args[3]
         self.assertIn("{{ body.pull_request.base.sha }}", sent)
         self.assertIn("$BASE_SHA", sent)
 
@@ -588,7 +601,7 @@ class InnerloopTests(unittest.TestCase):
         bundle = self.root / ".tekton" / "bundle.yaml"
         bundle.parent.mkdir()
         bundle.write_text(
-            yaml.safe_dump({"kind": "PipelineRun", "spec": {"pipelineRef": {"resolver": "bundles"}}})
+            yaml.safe_dump({"kind": "PipelineRun", "spec": {"pipelineRef": {"resolver": "git"}}})
         )
         with self.assertRaisesRegex(
             ValueError, r"No pipeline in \.tekton/ can run locally:\n    \.tekton/bundle\.yaml: .*remote pipelineRef"
@@ -943,6 +956,17 @@ class InnerloopTests(unittest.TestCase):
         self.assertEqual(result, {"inputs": [], "steps": []})
         self.assertIn("Inspecting repository", output.getvalue())
         self.assertNotIn("\033[", output.getvalue())
+
+    def test_agent_prompt_is_sent_on_stdin(self):
+        prompt = "x" * 300_000
+        code = (
+            "import json, sys; size = len(sys.stdin.read()); print(json.dumps({'type': 'message_end', "
+            "'message': {'role': 'assistant', 'stopReason': 'stop', 'content': "
+            "[{'type': 'text', 'text': json.dumps({'size': size})}]}}))"
+        )
+        with contextlib.redirect_stderr(io.StringIO()):
+            result = MODULE["agent_plan"]([sys.executable, "-c", code], self.root, 5, prompt)
+        self.assertEqual(result, {"size": len(prompt)})
 
     def test_agent_timeout_stops_process(self):
         pid_file = self.root / "agent.pid"
@@ -1309,6 +1333,134 @@ class InnerloopTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaisesRegex(ValueError, ".tekton-innerloop.yaml"):
                 MODULE["cluster_patterns"](self.root)
 
+    PINNED = "sha256:" + "a" * 64
+    TAGGED = "sha256:" + "b" * 64
+
+    def fake_bundle(self, *objects, error=None):
+        """A skopeo on PATH that serves one bundle image holding objects, or fails with error."""
+        registry = self.root / "registry"
+        blobs = registry / "blobs"
+        blobs.mkdir(parents=True, exist_ok=True)
+        layers = []
+        for index, obj in enumerate(objects, 1):
+            data = json.dumps(obj).encode()
+            blob = blobs / f"{index:064x}"
+            with tarfile.open(blob, "w:gz") as tar:
+                info = tarfile.TarInfo(obj["metadata"]["name"])
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+            annotations = {"dev.tekton.image.kind": obj["kind"].lower(), "dev.tekton.image.name": obj["metadata"]["name"]}
+            layers.append({"digest": f"sha256:{blob.name}", "annotations": annotations})
+        (blobs / "manifest.json").write_text(json.dumps({"layers": layers}))
+        failure = f'echo "{error}" >&2; exit 1' if error else ""
+        bindir = self.root / "bin"
+        bindir.mkdir(exist_ok=True)
+        tool = bindir / "skopeo"
+        tool.write_text(
+            f'#!/bin/sh\necho "$@" >> {registry}/calls\n{failure}\n'
+            f'case "$1" in\ninspect) echo {self.TAGGED} ;;\ncopy) cp {blobs}/* "${{4#dir:}}/" ;;\nesac\n'
+        )
+        tool.chmod(0o755)
+        return patch.dict(os.environ, {"PATH": f"{bindir}:{os.environ['PATH']}"})
+
+    def skopeo_calls(self):
+        calls = self.root / "registry" / "calls"
+        return calls.read_text().splitlines() if calls.exists() else []
+
+    def bundle_ref(self, image, name, kind="task"):
+        params = {"bundle": image, "name": name, "kind": kind}
+        return {"resolver": "bundles", "params": [{"name": k, "value": v} for k, v in params.items()]}
+
+    def test_bundle_references_are_fetched_or_left_with_a_reason(self):
+        repo = "example.invalid/catalog/task-lint"
+        action = {"kind": "StepAction", "metadata": {"name": "lint"}, "spec": {"image": "example.invalid/act:1", "script": "act"}}
+        task = self.task("lint")
+        task["spec"]["steps"].append({"name": "act", "ref": self.bundle_ref(f"{repo}:0.1@{self.PINNED}", "lint", "stepaction")})
+        tests = [
+            {"name": "tag and digest", "image": f"{repo}:0.1@{self.PINNED}", "digest": self.PINNED, "inspect": False},
+            {"name": "tag only", "image": f"{repo}:0.1", "digest": self.TAGGED, "inspect": True},
+            {"name": "registry error", "image": f"{repo}@{self.PINNED}", "error": "FATA unauthorized",
+             "note": "bundle reference not fetched: skopeo failed: FATA unauthorized"},
+            {"name": "no skopeo", "image": f"{repo}@{self.PINNED}", "which": None,
+             "note": "bundle reference not fetched: install skopeo to fetch Tekton bundles"},
+        ]
+        for tt in tests:
+            with self.subTest(tt["name"]):
+                shutil.rmtree(self.root / "registry", ignore_errors=True)
+                shutil.rmtree(Path(os.environ["XDG_CACHE_HOME"]) / "tkn-innerloop" / "bundles", ignore_errors=True)
+                GLOBALS["_bundle_digests"].clear()
+                GLOBALS["_bundle_failures"].clear()
+                self.pipeline.write_text(yaml.safe_dump(
+                    {"kind": "PipelineRun", "spec": {"pipelineSpec": {"tasks": [
+                        {"name": "checks", "taskRef": self.bundle_ref(tt["image"], "lint")}]}}}
+                ))
+                which = patch.object(GLOBALS["shutil"], "which", return_value=None) if "which" in tt else contextlib.nullcontext()
+                with self.fake_bundle(action, task, error=tt.get("error")), which:
+                    sources = MODULE["inventory"](self.pipeline, self.root)
+                if "note" in tt:
+                    self.assertEqual(list(sources), ["checks/task"])
+                    self.assertIn(tt["note"], sources["checks/task"]["reference_note"])
+                    continue
+                self.assertEqual(list(sources), ["checks/check", "checks/act"])
+                task_input = f"bundle:{repo}@{tt['digest']}#task/lint"
+                self.assertEqual(sources["checks/check"]["defined_in"], [task_input])
+                self.assertEqual(sources["checks/act"]["step"]["script"], "act")
+                self.assertEqual(sources["checks/act"]["step_action"]["name"], "lint")
+                self.assertIn(f"bundle:{repo}@{self.PINNED}#stepaction/lint", sources["checks/act"]["defined_in"])
+                calls = self.skopeo_calls()
+                self.assertIn(f"copy -q docker://{repo}@{tt['digest']} dir:", calls[-2 if tt["inspect"] else 0])
+                self.assertEqual(any(call.startswith("inspect") for call in calls), tt["inspect"])
+
+    def test_bundle_pipeline_reference_is_inlined_or_an_error(self):
+        image = f"example.invalid/catalog/pipeline-ci@{self.PINNED}"
+        pipeline = self.pipeline_doc(task_ref=self.bundle_ref(image, "lint"))
+        self.pipeline.write_text(yaml.safe_dump(
+            {"kind": "PipelineRun", "spec": {"pipelineRef": self.bundle_ref(image, "ci", "pipeline")}}
+        ))
+        with self.fake_bundle(pipeline, self.task("lint")):
+            sources = MODULE["inventory"](self.pipeline, self.root)
+        self.assertEqual(list(sources), ["checks/check"])
+        self.assertIn(f"bundle:example.invalid/catalog/pipeline-ci@{self.PINNED}#pipeline/ci", sources["checks/check"]["defined_in"])
+        shutil.rmtree(Path(os.environ["XDG_CACHE_HOME"]) / "tkn-innerloop" / "bundles")
+        GLOBALS["_bundle_failures"].clear()
+        with self.fake_bundle(error="manifest unknown"), self.assertRaisesRegex(
+            ValueError, "bundle pipelineRef: skopeo failed: manifest unknown"
+        ):
+            MODULE["inventory"](self.pipeline, self.root)
+
+    def test_bundle_objects_are_cached_and_invalidate_the_plan(self):
+        image = f"example.invalid/catalog/task-lint:0.1@{self.PINNED}"
+        self.pipeline.write_text(yaml.safe_dump(self.pipeline_doc(task_ref=self.bundle_ref(image, "lint"))))
+        with self.fake_bundle(self.task("lint")):
+            sources = MODULE["inventory"](self.pipeline, self.root)
+            GLOBALS["_bundle_failures"].clear()
+            self.assertEqual(MODULE["inventory"](self.pipeline, self.root), sources)
+        self.assertEqual(len(self.skopeo_calls()), 1)
+        plan = MODULE["assemble_plan"](self.good_proposal(), self.root, "pipeline.yaml", sources, ["checks/check"])
+        name = f"bundle:example.invalid/catalog/task-lint@{self.PINNED}#task/lint"
+        self.assertIn(name, plan["inputs"])
+        self.plan = plan
+        self.validate()
+        cached = GLOBALS["bundle_path"](name)
+        cached.write_text(cached.read_text().replace("exit 0", "exit 1"))
+        with self.assertRaisesRegex(ValueError, f"Stale plan: {name} changed"):
+            self.validate()
+
+    def test_konflux_checkout_steps_are_provided_and_source_is_the_worktree(self):
+        self.write_source([
+            {"name": "use-trusted-artifact", "image": "quay.io/konflux-ci/build-trusted-artifacts:latest",
+             "args": ["use", "$(params.SOURCE_ARTIFACT)=/var/workdir/source"]},
+            {"name": "check", "image": "example.invalid/check:1", "workingDir": "/var/workdir/source",
+             "script": "ls /var/workdir/source/x /var/workdir/sourced"},
+        ])
+        sources = MODULE["inventory"](self.pipeline, self.root)
+        step = sources["checks/check"]["step"]
+        self.assertEqual(step["workingDir"], "$WORKSPACE")
+        self.assertEqual(step["script"], "ls $WORKSPACE/x /var/workdir/sourced")
+        keep, left = MODULE["auto_scope"](sources)
+        self.assertEqual(keep, ["checks/check"])
+        self.assertEqual(left, {"checks/use-trusted-artifact": "provided by the local checkout"})
+
     def fake_tkn_pac(self, body, version="0.40.0"):
         bindir = self.root / "bin"
         bindir.mkdir(exist_ok=True)
@@ -1377,7 +1529,24 @@ class CorpusTests(unittest.TestCase):
         self.assertGreaterEqual(len(cases), 10)
         for case in cases:
             expected = yaml.safe_load((case / "expected.yaml").read_text())
-            with self.subTest(case=case.name), tempfile.TemporaryDirectory() as tmp:
+            bundles = case / "bundles"
+            tags = bundles / "tags.yaml"
+            with (
+                self.subTest(case=case.name),
+                tempfile.TemporaryDirectory() as tmp,
+                tempfile.TemporaryDirectory() as cache,
+                patch.dict(GLOBALS, skopeo=offline_skopeo),
+                patch.dict(GLOBALS["_bundle_failures"], clear=True),
+                patch.dict(
+                    GLOBALS["_bundle_digests"],
+                    yaml.safe_load(tags.read_text()) if tags.exists() else {},
+                    clear=True,
+                ),
+                patch.dict(
+                    os.environ,
+                    {"XDG_CACHE_HOME": cache, GLOBALS["BUNDLE_DIR_ENV"]: str(bundles)},
+                ),
+            ):
                 root = Path(tmp)
                 shutil.copytree(case / "repo", root, dirs_exist_ok=True)
                 entry = root / expected["source"]

@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Vendor the Tekton bundle objects that corpus cases reference, so CorpusTests run offline.
+
+Each case's entry file is inventoried against an empty cache. Every fetched object is
+copied to <case>/bundles/, laid out like the bundle cache, and the digest each tag
+reference resolved to is pinned in <case>/bundles/tags.yaml. Needs skopeo and network.
+"""
+
+import argparse
+import os
+import runpy
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+import yaml
+
+HERE = Path(__file__).resolve().parent
+CORPUS = HERE / "corpus"
+CLI = HERE.parent / "bin" / "tkn-innerloop"
+
+
+def vendor(case: Path) -> int:
+    expected = yaml.safe_load((case / "expected.yaml").read_text())
+    with tempfile.TemporaryDirectory(prefix="corpus-bundles-") as tmp:
+        os.environ["XDG_CACHE_HOME"] = tmp
+        os.environ.pop("TKN_INNERLOOP_BUNDLE_DIR", None)
+        module = runpy.run_path(str(CLI))
+        root = Path(tmp) / "repo"
+        shutil.copytree(case / "repo", root)
+        try:
+            module["inventory"](root / expected["source"], root)
+        except ValueError as exc:
+            if not expected.get("error"):
+                raise
+            print(f"  {case.name}: {exc}", file=sys.stderr)
+        if module["_bundle_failures"]:
+            for name, exc in module["_bundle_failures"].items():
+                print(f"  {case.name}: {name}: {exc}", file=sys.stderr)
+            raise SystemExit(1)
+        target = case / "bundles"
+        shutil.rmtree(target, ignore_errors=True)
+        fetched = Path(tmp) / "tkn-innerloop" / "bundles"
+        if not fetched.is_dir():
+            return 0
+        shutil.copytree(fetched, target)
+        if module["_bundle_digests"]:
+            (target / "tags.yaml").write_text(yaml.safe_dump(module["_bundle_digests"]))
+        return sum(1 for _ in target.rglob("*.yaml")) - bool(module["_bundle_digests"])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("cases", nargs="*", help="case names (default: every case)")
+    args = parser.parse_args()
+    cases = [CORPUS / name for name in args.cases] or sorted(
+        path.parent for path in CORPUS.glob("*/expected.yaml")
+    )
+    for case in cases:
+        count = vendor(case)
+        if count:
+            print(f"{case.name}: {count} bundle object(s)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

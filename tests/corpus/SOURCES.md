@@ -1,7 +1,8 @@
 # Corpus sources
 
 Each case vendors only the YAML it needs, copied unchanged at its original path under
-`<case>/repo/`. All sources are Apache-2.0 licensed.
+`<case>/repo/`. Tekton bundle objects the case references are mirrored under
+`<case>/bundles/` by `tests/corpus-bundles`. All sources are Apache-2.0 licensed.
 
 | Case | Repository | Commit | Files | Licence |
 | --- | --- | --- | --- | --- |
@@ -10,6 +11,7 @@ Each case vendors only the YAML it needs, copied unchanged at its original path 
 | pac-release-local-task | [tektoncd/pipelines-as-code](https://github.com/tektoncd/pipelines-as-code/tree/71548140eca5d8d7b5c3d4df27319a3875c738ec) | `71548140eca5` | `.tekton/release-pipeline.yaml`<br>`.tekton/tasks/goreleaser.yaml` | Apache-2.0 |
 | pac-remote-pipeline-annotation | [tektoncd/pipelines-as-code](https://github.com/tektoncd/pipelines-as-code/tree/71548140eca5d8d7b5c3d4df27319a3875c738ec) | `71548140eca5` | `.tekton/boussole.yaml` | Apache-2.0 |
 | pac-konflux-bundles-matrix | [konflux-ci/build-service](https://github.com/konflux-ci/build-service/tree/07182b00cba234389f431e5c77e9475510bfbfdb) | `07182b00cba2` | `.tekton/build-service-pull-request.yaml` | Apache-2.0 |
+| pac-konflux-fbc-lightspeed | [openshift/lightspeed-operator](https://github.com/openshift/lightspeed-operator/tree/bd455a2036a86a8c5cde29ab96593134b0f89381) | `bd455a2036a8` | `.tekton/fbc-v4-21-pull-request.yaml` | Apache-2.0 |
 | pac-local-pipeline-and-tasks | [openshift-pipelines/pipeline-service](https://github.com/openshift-pipelines/pipeline-service/tree/5b34974a82703dfba477bbec73b0658d49ddc69b) | `5b34974a8270` | `.tekton/pipeline/update-repository.yaml`<br>`.tekton/tasks/update-repository.yaml`<br>`.tekton/update-dependencies.yaml` | Apache-2.0 |
 | pac-chains-release | [tektoncd/chains](https://github.com/tektoncd/chains/tree/252e2ab89b0548236aaa486fac2b669b79b6d4b1) | `252e2ab89b05` | `.tekton/release.yaml`<br>`release/release-pipeline.yaml` | Apache-2.0 |
 | tekton-cel-when-finally | [tektoncd/pipeline](https://github.com/tektoncd/pipeline/tree/4ee5e53d57f49682d267f009591b165a18e77478) | `4ee5e53d57f4` | `examples/v1/pipelineruns/alpha/pipelinerun-with-cel-when-expressions.yaml` | Apache-2.0 |

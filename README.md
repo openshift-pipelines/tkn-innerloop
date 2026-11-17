@@ -34,7 +34,7 @@ tkn-innerloop run                                  # when the repository has one
 ```
 
 `run` picks the steps itself: steps that point at an external reference
-(`git-clone`, caches), `finally` tasks, steps marked `(skip-local)` and steps that
+(`git-clone`, caches), steps provided by the local checkout, `finally` tasks, steps marked `(skip-local)` and steps that
 push, deploy or post to an API stay on the cluster. Add patterns for your own
 publishing tools in `.tekton-innerloop.yaml` at the repository root:
 
@@ -77,10 +77,25 @@ to them are ignored. A `pipelineRef`, `taskRef` or step `ref` by name is looked 
 in the repository's tracked and untracked YAML files (git-ignored ones are
 skipped) and inlined, so a PipelineRun pointing at `tekton/pipeline.yaml` and Tasks under
 `tekton/tasks/` works as is. Those files become plan inputs: editing a Task makes
-the plan stale. A missing or remote `pipelineRef` is an error, since there is no
-step list to work from. A Task that is missing, defined twice, a ClusterTask, or
-fetched by a resolver (hub, git, bundles) stays an unresolved reference, and
-`inspect` says why. Parameter values reach the agent with the task's defaults;
+the plan stale. A missing `pipelineRef`, or a remote one other than a bundle, is
+an error, since there is no step list to work from. A Task or StepAction that is
+missing, defined twice, a ClusterTask, or fetched by another resolver (hub, git)
+stays an unresolved reference, and `inspect` says why.
+
+Tekton bundles (`resolver: bundles`) are fetched with
+[skopeo](https://github.com/containers/skopeo), using your registry login, for
+`pipelineRef`, `taskRef` and step `ref`. Each object is pinned to its image
+digest; a tag-only reference is looked up once per run. Objects are cached in
+`${XDG_CACHE_HOME:-~/.cache}/tkn-innerloop/bundles/`, so later runs work offline,
+and they are plan inputs like local files. `TKN_INNERLOOP_BUNDLE_DIR` points at a
+mirror with the same layout, checked before the cache. When skopeo is missing or
+the fetch fails, a Task stays a reference with the reason and a bundle
+`pipelineRef` is an error.
+
+In Konflux pipelines the clone task and the `build-trusted-artifacts` steps only
+recreate the source checkout, so they are marked as provided by the local
+checkout and never run. The directory they restore the source into
+(`/var/workdir/source`) becomes `$WORKSPACE` in the other steps. Parameter values reach the agent with the task's defaults;
 the agent applies them in its script edits. It also evaluates `when` guards it can
 decide from parameters, and has to loop over a `matrix` task's combinations or
 leave it unresolved (`inspect` marks those tasks).

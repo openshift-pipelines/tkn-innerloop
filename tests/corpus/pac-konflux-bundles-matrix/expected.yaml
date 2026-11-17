@@ -1,74 +1,265 @@
 source: .tekton/build-service-pull-request.yaml
 pac: true
 steps:
-  init/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  clone-repository/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  prefetch-dependencies/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  build-images/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  init/init:
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:85141954209ee158fe9e559869a0da196ff08c5d4bb15b1a6c2e54d4fcd6b52f
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-init@sha256:67bea82c44ab9824b81e60b9626bef36545e5cd5206b1edb8435f9f93526f57a#task/init
+  clone-repository/clone:
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:85141954209ee158fe9e559869a0da196ff08c5d4bb15b1a6c2e54d4fcd6b52f
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:c3c1071a99310be07d5706ea3ef7b4311ebccb17b17b839e606180ee396497dc#task/git-clone-oci-ta
+  clone-repository/create-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:6df16e808f147926a2ba5f88588350bd8f77e73fde43614e79ddbd6e2b097d2e
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:c3c1071a99310be07d5706ea3ef7b4311ebccb17b17b839e606180ee396497dc#task/git-clone-oci-ta
+  prefetch-dependencies/skip-ta:
+    image: quay.io/konflux-ci/task-runner:2.0.0@sha256:4b01fbf98fa7155f5c21443c285f88853864ae7cc66981cf6b543fc6ba16b81b
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta@sha256:3839c8468b08b3aab55f4cc92e645ad275012f8ef8235a504aca397121a9e7da#task/prefetch-dependencies-oci-ta
+  prefetch-dependencies/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:6df16e808f147926a2ba5f88588350bd8f77e73fde43614e79ddbd6e2b097d2e
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta@sha256:3839c8468b08b3aab55f4cc92e645ad275012f8ef8235a504aca397121a9e7da#task/prefetch-dependencies-oci-ta
+  prefetch-dependencies/prefetch-dependencies:
+    image: quay.io/konflux-ci/hermeto:0.63.0@sha256:cad54694e0b9ebcbb65eac5f3943154518ab60876a5df41317b5f399df484006
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta@sha256:3839c8468b08b3aab55f4cc92e645ad275012f8ef8235a504aca397121a9e7da#task/prefetch-dependencies-oci-ta
+  prefetch-dependencies/create-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:6df16e808f147926a2ba5f88588350bd8f77e73fde43614e79ddbd6e2b097d2e
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta@sha256:3839c8468b08b3aab55f4cc92e645ad275012f8ef8235a504aca397121a9e7da#task/prefetch-dependencies-oci-ta
+  build-images/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:6df16e808f147926a2ba5f88588350bd8f77e73fde43614e79ddbd6e2b097d2e
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:6b4aef24a3c59a206d2d43c99b6b85e715c9b9c7fc905cb25aa6655fa315c332#task/buildah-remote-oci-ta
     matrix: true
-  build-image-index/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  build-source-image/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  deprecated-base-image-check/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  roxctl-scan/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  build-images/build:
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:42809082a271a037f0774af81e536d9f7d03cf0236634ff44b1c5f85b7fa2216
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:6b4aef24a3c59a206d2d43c99b6b85e715c9b9c7fc905cb25aa6655fa315c332#task/buildah-remote-oci-ta
     matrix: true
-  ecosystem-cert-preflight-checks/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  build-images/prepare-sboms:
+    image: quay.io/konflux-ci/mobster:2.3.0@sha256:8271460f52c07aa58717362da0a83d5c6c2de3fc0c2071844f93680438d48710
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:6b4aef24a3c59a206d2d43c99b6b85e715c9b9c7fc905cb25aa6655fa315c332#task/buildah-remote-oci-ta
     matrix: true
-  sast-snyk-check/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  sast-shell-check/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  sast-unicode-check/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  clamav-scan/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  build-images/upload-sbom:
+    image: quay.io/konflux-ci/task-runner:2.0.0@sha256:4b01fbf98fa7155f5c21443c285f88853864ae7cc66981cf6b543fc6ba16b81b
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:6b4aef24a3c59a206d2d43c99b6b85e715c9b9c7fc905cb25aa6655fa315c332#task/buildah-remote-oci-ta
     matrix: true
-  apply-tags/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  push-dockerfile/task:
-    reference: true
-    note: bundles resolver reference, contents not read
-  rpms-signature-scan/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  build-image-index/build:
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:337cc9e8f2a3e2d3756119e3abc7baa3a9114a7357c8f45c6937445055b4b7f3
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-build-image-index@sha256:6c8091183f05f93c022f07eef03f44a411f1e4d43c39057051306ad1e78d5fc2#task/build-image-index
+  build-image-index/create-sbom:
+    image: quay.io/konflux-ci/mobster:1.2.1-1782136886@sha256:1374bc35c71781987cce00ef5efe2be42923f83def19b60a570e947189b90d15
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-build-image-index@sha256:6c8091183f05f93c022f07eef03f44a411f1e4d43c39057051306ad1e78d5fc2#task/build-image-index
+  build-image-index/upload-sbom:
+    image: quay.io/konflux-ci/task-runner:2.0.0@sha256:4b01fbf98fa7155f5c21443c285f88853864ae7cc66981cf6b543fc6ba16b81b
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-build-image-index@sha256:6c8091183f05f93c022f07eef03f44a411f1e4d43c39057051306ad1e78d5fc2#task/build-image-index
+  build-source-image/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:6df16e808f147926a2ba5f88588350bd8f77e73fde43614e79ddbd6e2b097d2e
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-source-build-oci-ta@sha256:4bf27ae2f9de1da9f63258f8a6c2f31e34e7270d8ab1004e61f1abe0756f6948#task/source-build-oci-ta
+  build-source-image/get-base-images:
+    image: quay.io/konflux-ci/task-runner:1.8.1@sha256:b9ef0479b57a494368a12a02886c650314c9ac7391c6228f21065865aab71c9e
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-source-build-oci-ta@sha256:4bf27ae2f9de1da9f63258f8a6c2f31e34e7270d8ab1004e61f1abe0756f6948#task/source-build-oci-ta
+  build-source-image/build:
+    image: quay.io/konflux-ci/source-container-build:latest@sha256:157c38d973b561c2a2dcb71777f51674fecdfa58597410bc06b8adc5fe89cad3
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-source-build-oci-ta@sha256:4bf27ae2f9de1da9f63258f8a6c2f31e34e7270d8ab1004e61f1abe0756f6948#task/source-build-oci-ta
+  deprecated-base-image-check/check-images:
+    image: quay.io/konflux-ci/konflux-test:v1.5.10@sha256:2f9960d60c0e4aa0c2fba42b147736fab5bd11644577cff60ec4255a392be252
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check@sha256:f86e420c8af92a8ed9ca8f82dee3cd14f8ba03cc592583595ea78642513f00c2#task/deprecated-image-check
+  roxctl-scan/exchange-service-account-token:
+    image: registry.redhat.io/advanced-cluster-security/rhacs-roxctl-rhel9@sha256:98f01d623e119acbbc211bdeb36192b619969aa149d9c66bab8034eeef84c861
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-roxctl-scan@sha256:78e49dd18ed8e438d28cbd27e7d93f98b3dab35dd77df7930810b747c6033d6e#task/roxctl-scan
+    matrix: true
+  roxctl-scan/get-image-manifests:
+    image: quay.io/konflux-ci/konflux-test:v1.5.10@sha256:2f9960d60c0e4aa0c2fba42b147736fab5bd11644577cff60ec4255a392be252
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-roxctl-scan@sha256:78e49dd18ed8e438d28cbd27e7d93f98b3dab35dd77df7930810b747c6033d6e#task/roxctl-scan
+    matrix: true
+  roxctl-scan/rox-image-scan:
+    image: registry.redhat.io/advanced-cluster-security/rhacs-roxctl-rhel9@sha256:98f01d623e119acbbc211bdeb36192b619969aa149d9c66bab8034eeef84c861
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-roxctl-scan@sha256:78e49dd18ed8e438d28cbd27e7d93f98b3dab35dd77df7930810b747c6033d6e#task/roxctl-scan
+    matrix: true
+  roxctl-scan/proccess-output:
+    image: quay.io/konflux-ci/konflux-test:v1.5.10@sha256:2f9960d60c0e4aa0c2fba42b147736fab5bd11644577cff60ec4255a392be252
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-roxctl-scan@sha256:78e49dd18ed8e438d28cbd27e7d93f98b3dab35dd77df7930810b747c6033d6e#task/roxctl-scan
+    matrix: true
+  roxctl-scan/oci-attach-report:
+    image: quay.io/konflux-ci/task-runner:3.3.0@sha256:0428af436f6942544009e38ef452a6b747e9ec79ab22fd402a3d59585984cf81
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-roxctl-scan@sha256:78e49dd18ed8e438d28cbd27e7d93f98b3dab35dd77df7930810b747c6033d6e#task/roxctl-scan
+    matrix: true
+  roxctl-scan/conftest-vulnerabilities:
+    image: quay.io/konflux-ci/konflux-test:v1.5.10@sha256:2f9960d60c0e4aa0c2fba42b147736fab5bd11644577cff60ec4255a392be252
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-roxctl-scan@sha256:78e49dd18ed8e438d28cbd27e7d93f98b3dab35dd77df7930810b747c6033d6e#task/roxctl-scan
+    matrix: true
+  roxctl-scan/get-rhsas:
+    image: quay.io/konflux-ci/konflux-test:v1.5.10@sha256:2f9960d60c0e4aa0c2fba42b147736fab5bd11644577cff60ec4255a392be252
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-roxctl-scan@sha256:78e49dd18ed8e438d28cbd27e7d93f98b3dab35dd77df7930810b747c6033d6e#task/roxctl-scan
+    matrix: true
+  ecosystem-cert-preflight-checks/introspect:
+    image: quay.io/konflux-ci/task-runner:4.0.0@sha256:ab7440e1101af1ff0418e16badede2f1590664d3189099030bf3f782371bd9da
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks@sha256:0b1783a11d9066cd4a26fb20251785cf7283258ebe7a1f4e9c2247f6d57b7064#task/ecosystem-cert-preflight-checks
+    matrix: true
+  ecosystem-cert-preflight-checks/generate-container-auth:
+    image: quay.io/konflux-ci/task-runner:4.0.0@sha256:ab7440e1101af1ff0418e16badede2f1590664d3189099030bf3f782371bd9da
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks@sha256:0b1783a11d9066cd4a26fb20251785cf7283258ebe7a1f4e9c2247f6d57b7064#task/ecosystem-cert-preflight-checks
+    matrix: true
+  ecosystem-cert-preflight-checks/set-skip-for-bundles:
+    image: quay.io/konflux-ci/konflux-test:v1.5.10@sha256:2f9960d60c0e4aa0c2fba42b147736fab5bd11644577cff60ec4255a392be252
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks@sha256:0b1783a11d9066cd4a26fb20251785cf7283258ebe7a1f4e9c2247f6d57b7064#task/ecosystem-cert-preflight-checks
+    matrix: true
+  ecosystem-cert-preflight-checks/app-check:
+    image: quay.io/opdev/preflight:stable@sha256:cb198b3bb3b5fc8969f4af2e7bef22533f46eae185c586c7077cbc33612f0ba5
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks@sha256:0b1783a11d9066cd4a26fb20251785cf7283258ebe7a1f4e9c2247f6d57b7064#task/ecosystem-cert-preflight-checks
+    matrix: true
+  ecosystem-cert-preflight-checks/app-set-outcome:
+    image: quay.io/konflux-ci/task-runner:4.0.0@sha256:ab7440e1101af1ff0418e16badede2f1590664d3189099030bf3f782371bd9da
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks@sha256:0b1783a11d9066cd4a26fb20251785cf7283258ebe7a1f4e9c2247f6d57b7064#task/ecosystem-cert-preflight-checks
+    matrix: true
+  ecosystem-cert-preflight-checks/final-outcome:
+    image: quay.io/konflux-ci/task-runner:4.0.0@sha256:ab7440e1101af1ff0418e16badede2f1590664d3189099030bf3f782371bd9da
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks@sha256:0b1783a11d9066cd4a26fb20251785cf7283258ebe7a1f4e9c2247f6d57b7064#task/ecosystem-cert-preflight-checks
+    matrix: true
+  sast-snyk-check/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:d4155ab6553b406bd5ab96b98bb10ab97a38a6f9dcb7c39dd18678428e8b2e64
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-snyk-check-oci-ta@sha256:53443febc3a87ea6d4baacffc70d6f7dbdd1b4e69e0852337661097c73433519#task/sast-snyk-check-oci-ta
+  sast-snyk-check/fetch-extra-artifacts:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:d4155ab6553b406bd5ab96b98bb10ab97a38a6f9dcb7c39dd18678428e8b2e64
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-snyk-check-oci-ta@sha256:53443febc3a87ea6d4baacffc70d6f7dbdd1b4e69e0852337661097c73433519#task/sast-snyk-check-oci-ta
+  sast-snyk-check/sast-snyk-check:
+    image: quay.io/konflux-ci/konflux-test:v1.5.8@sha256:ce93e7ff1618deda40a66d90289d8fee1bf1ac151c06f1defd33d2a56dbd2b94
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-snyk-check-oci-ta@sha256:53443febc3a87ea6d4baacffc70d6f7dbdd1b4e69e0852337661097c73433519#task/sast-snyk-check-oci-ta
+  sast-snyk-check/upload:
+    image: quay.io/konflux-ci/oras:latest@sha256:1cc659b4d30536ec98300ac551739ef36dee345a7dcfe06129fd78abdc3688ac
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-snyk-check-oci-ta@sha256:53443febc3a87ea6d4baacffc70d6f7dbdd1b4e69e0852337661097c73433519#task/sast-snyk-check-oci-ta
+  sast-shell-check/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:d4155ab6553b406bd5ab96b98bb10ab97a38a6f9dcb7c39dd18678428e8b2e64
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-shell-check-oci-ta@sha256:83722286ec3297e3f66b0c220cec8895e0f745337e464c1d1c038ed737cf69fd#task/sast-shell-check-oci-ta
+  sast-shell-check/sast-shell-check:
+    image: quay.io/konflux-ci/konflux-test:v1.5.8@sha256:ce93e7ff1618deda40a66d90289d8fee1bf1ac151c06f1defd33d2a56dbd2b94
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-shell-check-oci-ta@sha256:83722286ec3297e3f66b0c220cec8895e0f745337e464c1d1c038ed737cf69fd#task/sast-shell-check-oci-ta
+  sast-shell-check/upload:
+    image: quay.io/konflux-ci/oras:latest@sha256:1cc659b4d30536ec98300ac551739ef36dee345a7dcfe06129fd78abdc3688ac
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-shell-check-oci-ta@sha256:83722286ec3297e3f66b0c220cec8895e0f745337e464c1d1c038ed737cf69fd#task/sast-shell-check-oci-ta
+  sast-unicode-check/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:d4155ab6553b406bd5ab96b98bb10ab97a38a6f9dcb7c39dd18678428e8b2e64
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-unicode-check-oci-ta@sha256:2ee89730856f542d851d99b5d945963583a840c295354dc4257a0052841e35ab#task/sast-unicode-check-oci-ta
+  sast-unicode-check/sast-unicode-check:
+    image: quay.io/konflux-ci/konflux-test:v1.5.8@sha256:ce93e7ff1618deda40a66d90289d8fee1bf1ac151c06f1defd33d2a56dbd2b94
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-unicode-check-oci-ta@sha256:2ee89730856f542d851d99b5d945963583a840c295354dc4257a0052841e35ab#task/sast-unicode-check-oci-ta
+  sast-unicode-check/upload:
+    image: quay.io/konflux-ci/oras:latest@sha256:1cc659b4d30536ec98300ac551739ef36dee345a7dcfe06129fd78abdc3688ac
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-sast-unicode-check-oci-ta@sha256:2ee89730856f542d851d99b5d945963583a840c295354dc4257a0052841e35ab#task/sast-unicode-check-oci-ta
+  clamav-scan/extract-and-scan-image:
+    image: quay.io/konflux-ci/clamav-db:latest
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-clamav-scan@sha256:0428b55c59b3d830b60ea1fcbfcd94b858b158e493fbd1a3dfb79192fff95662#task/clamav-scan
+    matrix: true
+  clamav-scan/upload:
+    image: quay.io/konflux-ci/task-runner:3.3.0@sha256:0428af436f6942544009e38ef452a6b747e9ec79ab22fd402a3d59585984cf81
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-clamav-scan@sha256:0428b55c59b3d830b60ea1fcbfcd94b858b158e493fbd1a3dfb79192fff95662#task/clamav-scan
+    matrix: true
+  apply-tags/apply-additional-tags:
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:85141954209ee158fe9e559869a0da196ff08c5d4bb15b1a6c2e54d4fcd6b52f
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-apply-tags@sha256:610662163505af1af243bd7bea57443e1351c68b05405f7cd343dbc4262dec06#task/apply-tags
+  push-dockerfile/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:6df16e808f147926a2ba5f88588350bd8f77e73fde43614e79ddbd6e2b097d2e
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-push-dockerfile-oci-ta@sha256:d9d5ecdc2f9ea3eeb10606fcaedb7db6e00949bfff213d6412dda16006ccdbde#task/push-dockerfile-oci-ta
+  push-dockerfile/push:
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:85141954209ee158fe9e559869a0da196ff08c5d4bb15b1a6c2e54d4fcd6b52f
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-push-dockerfile-oci-ta@sha256:d9d5ecdc2f9ea3eeb10606fcaedb7db6e00949bfff213d6412dda16006ccdbde#task/push-dockerfile-oci-ta
+  rpms-signature-scan/rpms-signature-scan:
+    image: quay.io/konflux-ci/tools@sha256:8f8733cf24d0bf29833cdbece8b7c65bce22d5ea221e2316bfb84e266e1575df
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan@sha256:a09426471bb6300723ccca8f212cd71621db60ce1acf22bc0eef4e3ba17034de#task/rpms-signature-scan
+  rpms-signature-scan/output-results:
+    image: quay.io/konflux-ci/konflux-test:v1.5.9@sha256:7faaebc542c61704003fecbab81a9c81c9770b4df8c5bba18459fba3f58e9c51
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan@sha256:a09426471bb6300723ccca8f212cd71621db60ce1acf22bc0eef4e3ba17034de#task/rpms-signature-scan
 scope:
-  local: []
+  local:
+  - init/init
+  - prefetch-dependencies/skip-ta
+  - prefetch-dependencies/prefetch-dependencies
+  - build-images/prepare-sboms
+  - build-image-index/build
+  - build-image-index/create-sbom
+  - build-source-image/build
+  - roxctl-scan/exchange-service-account-token
+  - roxctl-scan/get-image-manifests
+  - roxctl-scan/rox-image-scan
+  - roxctl-scan/proccess-output
+  - roxctl-scan/oci-attach-report
+  - roxctl-scan/conftest-vulnerabilities
+  - roxctl-scan/get-rhsas
+  - ecosystem-cert-preflight-checks/introspect
+  - ecosystem-cert-preflight-checks/generate-container-auth
+  - ecosystem-cert-preflight-checks/set-skip-for-bundles
+  - ecosystem-cert-preflight-checks/app-check
+  - ecosystem-cert-preflight-checks/app-set-outcome
+  - ecosystem-cert-preflight-checks/final-outcome
+  - sast-snyk-check/sast-snyk-check
+  - sast-snyk-check/upload
+  - sast-shell-check/sast-shell-check
+  - sast-shell-check/upload
+  - sast-unicode-check/sast-unicode-check
+  - sast-unicode-check/upload
+  - clamav-scan/extract-and-scan-image
+  - clamav-scan/upload
+  - apply-tags/apply-additional-tags
+  - push-dockerfile/push
+  - rpms-signature-scan/rpms-signature-scan
+  - rpms-signature-scan/output-results
   cluster:
-    init/task: external reference
-    clone-repository/task: external reference
-    prefetch-dependencies/task: external reference
-    build-images/task: external reference
-    build-image-index/task: external reference
-    build-source-image/task: external reference
-    deprecated-base-image-check/task: external reference
-    roxctl-scan/task: external reference
-    ecosystem-cert-preflight-checks/task: external reference
-    sast-snyk-check/task: external reference
-    sast-shell-check/task: external reference
-    sast-unicode-check/task: external reference
-    clamav-scan/task: external reference
-    apply-tags/task: external reference
-    push-dockerfile/task: external reference
-    rpms-signature-scan/task: external reference
+    clone-repository/clone: provided by the local checkout
+    clone-repository/create-trusted-artifact: provided by the local checkout
+    prefetch-dependencies/use-trusted-artifact: provided by the local checkout
+    prefetch-dependencies/create-trusted-artifact: provided by the local checkout
+    build-images/use-trusted-artifact: provided by the local checkout
+    build-images/build: publishes or deploys
+    build-images/upload-sbom: publishes or deploys
+    build-image-index/upload-sbom: publishes or deploys
+    build-source-image/use-trusted-artifact: provided by the local checkout
+    build-source-image/get-base-images: publishes or deploys
+    deprecated-base-image-check/check-images: publishes or deploys
+    sast-snyk-check/use-trusted-artifact: provided by the local checkout
+    sast-snyk-check/fetch-extra-artifacts: provided by the local checkout
+    sast-shell-check/use-trusted-artifact: provided by the local checkout
+    sast-unicode-check/use-trusted-artifact: provided by the local checkout
+    push-dockerfile/use-trusted-artifact: provided by the local checkout

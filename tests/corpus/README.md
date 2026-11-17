@@ -9,6 +9,8 @@ Real PipelineRuns and Pipelines from other repositories, used by
   the test
 - `README.md`: what a good local plan should look like, for reviewers and model
   evaluation; not asserted
+- `bundles/`: the Tekton bundle objects the case references, so the test runs
+  offline; `bundles/tags.yaml` pins the digest of each tag-only reference
 
 In `expected.yaml`, `steps` lists every step ID in order. Each step's fields are
 compared when present: `reference`, `note` (substring), `image`, `defined_in`,
@@ -46,4 +48,5 @@ calls the model and pulls images, so it is not part of the unit tests.
 
 To add a case, copy the files into `<case>/repo/`, add a row to `SOURCES.md`,
 write `expected.yaml` from the source rather than from the current output, and
-describe the expected plan in `README.md`.
+describe the expected plan in `README.md`. When the case uses Tekton bundles, run
+`tests/corpus-bundles <case>` (needs skopeo and network) to fill `bundles/`.

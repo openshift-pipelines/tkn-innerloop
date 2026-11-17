@@ -1,0 +1,2 @@
+ghcr.io/tektoncd/catalog/upstream/tasks/gcs-upload:0.1: sha256:6f606e1fe0ffc3a9146a37a447b58596487382775e31bb9f8dd17829c21215c9
+ghcr.io/tektoncd/catalog/upstream/tasks/git-batch-merge:0.2: sha256:7dd503d75fe0d5b37520040a3c67130e5941bde4f5c0a781eea5c85110b02040

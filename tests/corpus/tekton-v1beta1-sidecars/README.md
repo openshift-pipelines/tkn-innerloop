@@ -6,7 +6,10 @@ A `tekton.dev/v1beta1` CI job. It uses shared Tasks from
 `tekton/ci/shared/common-tasks.yaml`, bundle-resolved clone and log-upload
 tasks, a finally task, and a privileged docker-in-docker sidecar.
 
-The shared Tasks are inlined and recorded in defined_in. check-name and
+The shared Tasks and the two catalog bundle tasks are inlined and recorded in
+defined_in. clone-repo is the catalog git-batch-merge task: the automatic scope
+keeps it, but the worktree already is the checkout, so the model should skip it.
+upload-logs is a finally task. check-name and
 check-files-changed can run locally once their result paths and GitHub command
 parameters are bound. e2e-tests/kind has only args, so it runs the
 image entrypoint, and it needs the dind sidecar, which is never started locally.

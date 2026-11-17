@@ -1,0 +1,188 @@
+source: .tekton/fbc-v4-21-pull-request.yaml
+pac: true
+steps:
+  init/init:
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:59f2ea93fa4d47342b54acb434422ee07ebccd927a06a00d3f3eca70f8356ddf
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-init@sha256:288f3106118edc1d0f0c79a89c960abf5841a4dd8bc3f38feb10527253105b19#task/init
+  clone-repository/clone:
+    image: quay.io/konflux-ci/git-clone@sha256:09ac9c14392b5c2b8057f66cc4abfb8ce5d7214706318959d00908923a754434
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:2c388d28651457db60bb90287e7d8c3680303197196e4476878d98d81e8b6dc9#task/git-clone-oci-ta
+  clone-repository/symlink-check:
+    image: quay.io/konflux-ci/git-clone@sha256:09ac9c14392b5c2b8057f66cc4abfb8ce5d7214706318959d00908923a754434
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:2c388d28651457db60bb90287e7d8c3680303197196e4476878d98d81e8b6dc9#task/git-clone-oci-ta
+  clone-repository/create-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:15d7dc86012e41b10d1eb37679ec03ee75c96436224fadd0938a49dc537aa4ad
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:2c388d28651457db60bb90287e7d8c3680303197196e4476878d98d81e8b6dc9#task/git-clone-oci-ta
+  run-opm-command/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:7c44144ab0a9644c5da8ceea2b9f8df0e2e684aa5c1608688d7df9b8cc2836ac
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-run-opm-command-oci-ta@sha256:c79858b867713e44927438f6193c49004bf40bfd9248682f20c5a83ea2a9d2f1#task/run-opm-command-oci-ta
+  run-opm-command/run-opm-with-user-args:
+    image: quay.io/konflux-ci/operator-sdk-builder:latest@sha256:2737ff035f3a6d94e189cd31e7653998525c52f4d4db994ba1874a3a74bb4912
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-run-opm-command-oci-ta@sha256:c79858b867713e44927438f6193c49004bf40bfd9248682f20c5a83ea2a9d2f1#task/run-opm-command-oci-ta
+  run-opm-command/convert-image-tags-to-digests:
+    image: quay.io/konflux-ci/konflux-test:v1.4.50@sha256:8b9c7be18bef49f60ac9926830174072cc2010c620c7b3d0a5bb53ba02fcf71d
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-run-opm-command-oci-ta@sha256:c79858b867713e44927438f6193c49004bf40bfd9248682f20c5a83ea2a9d2f1#task/run-opm-command-oci-ta
+  run-opm-command/replace-related-images-pullspec-in-file:
+    image: quay.io/konflux-ci/konflux-test:v1.4.50@sha256:8b9c7be18bef49f60ac9926830174072cc2010c620c7b3d0a5bb53ba02fcf71d
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-run-opm-command-oci-ta@sha256:c79858b867713e44927438f6193c49004bf40bfd9248682f20c5a83ea2a9d2f1#task/run-opm-command-oci-ta
+  run-opm-command/create-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:7c44144ab0a9644c5da8ceea2b9f8df0e2e684aa5c1608688d7df9b8cc2836ac
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-run-opm-command-oci-ta@sha256:c79858b867713e44927438f6193c49004bf40bfd9248682f20c5a83ea2a9d2f1#task/run-opm-command-oci-ta
+  prefetch-dependencies/skip-ta:
+    image: registry.access.redhat.com/ubi9/ubi-minimal:9.7-1771346502@sha256:c7d44146f826037f6873d99da479299b889473492d3c1ab8af86f08af04ec8a0
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta@sha256:a579d00fe370b6d9a1cb1751c883ecd0ec9f663604344e2fd61e1f6d5bf4e990#task/prefetch-dependencies-oci-ta
+  prefetch-dependencies/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:15d7dc86012e41b10d1eb37679ec03ee75c96436224fadd0938a49dc537aa4ad
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta@sha256:a579d00fe370b6d9a1cb1751c883ecd0ec9f663604344e2fd61e1f6d5bf4e990#task/prefetch-dependencies-oci-ta
+  prefetch-dependencies/prefetch-dependencies:
+    image: quay.io/konflux-ci/hermeto:0.47.0@sha256:2ebf02dd0d795b0645c6d495eef05b8e87904bc5c13e82fa40e528ac0d05e010
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta@sha256:a579d00fe370b6d9a1cb1751c883ecd0ec9f663604344e2fd61e1f6d5bf4e990#task/prefetch-dependencies-oci-ta
+  prefetch-dependencies/create-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:15d7dc86012e41b10d1eb37679ec03ee75c96436224fadd0938a49dc537aa4ad
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta@sha256:a579d00fe370b6d9a1cb1751c883ecd0ec9f663604344e2fd61e1f6d5bf4e990#task/prefetch-dependencies-oci-ta
+  build-images/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:15d7dc86012e41b10d1eb37679ec03ee75c96436224fadd0938a49dc537aa4ad
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:a9ca472e297388d6ef8d1f51ee205abee6076aed7c5356ec0df84f14a2e78ad8#task/buildah-remote-oci-ta
+    matrix: true
+  build-images/build:
+    image: quay.io/konflux-ci/buildah-task:latest@sha256:4c470b5a153c4acd14bf4f8731b5e36c61d7faafe09c2bf376bb81ce84aa5709
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:a9ca472e297388d6ef8d1f51ee205abee6076aed7c5356ec0df84f14a2e78ad8#task/buildah-remote-oci-ta
+    matrix: true
+  build-images/push:
+    image: quay.io/konflux-ci/buildah-task:latest@sha256:4c470b5a153c4acd14bf4f8731b5e36c61d7faafe09c2bf376bb81ce84aa5709
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:a9ca472e297388d6ef8d1f51ee205abee6076aed7c5356ec0df84f14a2e78ad8#task/buildah-remote-oci-ta
+    matrix: true
+  build-images/sbom-syft-generate:
+    image: quay.io/konflux-ci/task-runner:1.4.1@sha256:d9feec6f2ce9b10cfb76b45ea14f83b5ed9f231de7d6083291550aebe8eb09ea
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:a9ca472e297388d6ef8d1f51ee205abee6076aed7c5356ec0df84f14a2e78ad8#task/buildah-remote-oci-ta
+    matrix: true
+  build-images/prepare-sboms:
+    image: quay.io/konflux-ci/mobster:1.1.0-1770046049@sha256:7415f55121f5580ac79dc6e6567383574ee5f94f97736f235a141688f02e6094
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:a9ca472e297388d6ef8d1f51ee205abee6076aed7c5356ec0df84f14a2e78ad8#task/buildah-remote-oci-ta
+    matrix: true
+  build-images/upload-sbom:
+    image: quay.io/konflux-ci/task-runner:1.4.1@sha256:d9feec6f2ce9b10cfb76b45ea14f83b5ed9f231de7d6083291550aebe8eb09ea
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta@sha256:a9ca472e297388d6ef8d1f51ee205abee6076aed7c5356ec0df84f14a2e78ad8#task/buildah-remote-oci-ta
+    matrix: true
+  build-image-index/build:
+    image: quay.io/konflux-ci/buildah-task:latest@sha256:4c470b5a153c4acd14bf4f8731b5e36c61d7faafe09c2bf376bb81ce84aa5709
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-build-image-index@sha256:c7b0f7e1f743040d99a3532abbdfddc9484f80fd559a75171c97499c3eb5d163#task/build-image-index
+  build-image-index/create-sbom:
+    image: quay.io/konflux-ci/mobster:1.1.0-1770046049@sha256:7415f55121f5580ac79dc6e6567383574ee5f94f97736f235a141688f02e6094
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-build-image-index@sha256:c7b0f7e1f743040d99a3532abbdfddc9484f80fd559a75171c97499c3eb5d163#task/build-image-index
+  build-image-index/upload-sbom:
+    image: quay.io/konflux-ci/task-runner:1.4.1@sha256:d9feec6f2ce9b10cfb76b45ea14f83b5ed9f231de7d6083291550aebe8eb09ea
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-build-image-index@sha256:c7b0f7e1f743040d99a3532abbdfddc9484f80fd559a75171c97499c3eb5d163#task/build-image-index
+  deprecated-base-image-check/check-images:
+    image: quay.io/konflux-ci/konflux-test:v1.4.49@sha256:74899c7a3dde27548e1ad9c665055bfef56c227251bd9224885f4bbd7addebd9
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check@sha256:3457a4ca93f8d55f14ebd407532b1223c689eacc34f0abb3003db4111667bdae#task/deprecated-image-check
+  apply-tags/apply-additional-tags:
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:a4bff739b5c0cb1c02b454c1b46ad54675f8df121efb5203fed19266a6b01639
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-apply-tags@sha256:510b6d2a3b188adeb716e49566b57d611ab36bd69a2794b5ddfc11dbf014c2ca#task/apply-tags
+  validate-fbc/inspect-image:
+    image: quay.io/konflux-ci/konflux-test:v1.4.50@sha256:8b9c7be18bef49f60ac9926830174072cc2010c620c7b3d0a5bb53ba02fcf71d
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-validate-fbc@sha256:291cbcce7d965831dd5027caad5f47ac4146b6fac0a51358f2ad64603a008436#task/validate-fbc
+  validate-fbc/extract-and-validate:
+    image: quay.io/konflux-ci/konflux-test:v1.4.50@sha256:8b9c7be18bef49f60ac9926830174072cc2010c620c7b3d0a5bb53ba02fcf71d
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-validate-fbc@sha256:291cbcce7d965831dd5027caad5f47ac4146b6fac0a51358f2ad64603a008436#task/validate-fbc
+  validate-fbc/save-related-images:
+    image: quay.io/konflux-ci/oras:latest@sha256:180b50c7be50c20e3349a79df8dd6062fee0e0dd01aa30e9a09d1d07d9ebd0c2
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-validate-fbc@sha256:291cbcce7d965831dd5027caad5f47ac4146b6fac0a51358f2ad64603a008436#task/validate-fbc
+  validate-fbc/save-rendered-catalog:
+    image: quay.io/konflux-ci/oras:latest@sha256:180b50c7be50c20e3349a79df8dd6062fee0e0dd01aa30e9a09d1d07d9ebd0c2
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-validate-fbc@sha256:291cbcce7d965831dd5027caad5f47ac4146b6fac0a51358f2ad64603a008436#task/validate-fbc
+  fbc-target-index-pruning-check/pull-rendered-catalog:
+    image: quay.io/konflux-ci/oras:latest@sha256:180b50c7be50c20e3349a79df8dd6062fee0e0dd01aa30e9a09d1d07d9ebd0c2
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-fbc-target-index-pruning-check@sha256:c2203ad57c8028b1d2544cc00c57ac8b6c7171da18012d8877e6587569a32e80#task/fbc-target-index-pruning-check
+  fbc-target-index-pruning-check/run-pruning-check:
+    image: quay.io/konflux-ci/konflux-test:v1.4.50@sha256:8b9c7be18bef49f60ac9926830174072cc2010c620c7b3d0a5bb53ba02fcf71d
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-fbc-target-index-pruning-check@sha256:c2203ad57c8028b1d2544cc00c57ac8b6c7171da18012d8877e6587569a32e80#task/fbc-target-index-pruning-check
+  fbc-fips-check-oci-ta/use-trusted-artifact:
+    image: quay.io/konflux-ci/build-trusted-artifacts:latest@sha256:7c44144ab0a9644c5da8ceea2b9f8df0e2e684aa5c1608688d7df9b8cc2836ac
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-fbc-fips-check-oci-ta@sha256:0dd84e6882a455d3ac00bc38c001ca02c3a680d4bb89124aa4b77eb5a62b8703#task/fbc-fips-check-oci-ta
+  fbc-fips-check-oci-ta/get-unique-related-images:
+    image: quay.io/konflux-ci/konflux-test:v1.4.50@sha256:8b9c7be18bef49f60ac9926830174072cc2010c620c7b3d0a5bb53ba02fcf71d
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-fbc-fips-check-oci-ta@sha256:0dd84e6882a455d3ac00bc38c001ca02c3a680d4bb89124aa4b77eb5a62b8703#task/fbc-fips-check-oci-ta
+  fbc-fips-check-oci-ta/fips-operator-check-step-action:
+    reference: true
+    note: git resolver reference, contents not read
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-fbc-fips-check-oci-ta@sha256:0dd84e6882a455d3ac00bc38c001ca02c3a680d4bb89124aa4b77eb5a62b8703#task/fbc-fips-check-oci-ta
+  fbc-fips-check-oci-ta/parse-images-processed-result:
+    image: quay.io/konflux-ci/konflux-test:v1.4.50@sha256:8b9c7be18bef49f60ac9926830174072cc2010c620c7b3d0a5bb53ba02fcf71d
+    defined_in:
+    - bundle:quay.io/konflux-ci/tekton-catalog/task-fbc-fips-check-oci-ta@sha256:0dd84e6882a455d3ac00bc38c001ca02c3a680d4bb89124aa4b77eb5a62b8703#task/fbc-fips-check-oci-ta
+scope:
+  local:
+  - init/init
+  - run-opm-command/run-opm-with-user-args
+  - run-opm-command/convert-image-tags-to-digests
+  - run-opm-command/replace-related-images-pullspec-in-file
+  - prefetch-dependencies/skip-ta
+  - prefetch-dependencies/prefetch-dependencies
+  - build-images/sbom-syft-generate
+  - build-images/prepare-sboms
+  - build-image-index/create-sbom
+  - apply-tags/apply-additional-tags
+  - validate-fbc/inspect-image
+  - validate-fbc/extract-and-validate
+  - validate-fbc/save-related-images
+  - validate-fbc/save-rendered-catalog
+  - fbc-target-index-pruning-check/pull-rendered-catalog
+  - fbc-target-index-pruning-check/run-pruning-check
+  - fbc-fips-check-oci-ta/get-unique-related-images
+  - fbc-fips-check-oci-ta/parse-images-processed-result
+  cluster:
+    clone-repository/clone: provided by the local checkout
+    clone-repository/symlink-check: provided by the local checkout
+    clone-repository/create-trusted-artifact: provided by the local checkout
+    run-opm-command/use-trusted-artifact: provided by the local checkout
+    run-opm-command/create-trusted-artifact: provided by the local checkout
+    prefetch-dependencies/use-trusted-artifact: provided by the local checkout
+    prefetch-dependencies/create-trusted-artifact: provided by the local checkout
+    build-images/use-trusted-artifact: provided by the local checkout
+    build-images/build: publishes or deploys
+    build-images/push: publishes or deploys
+    build-images/upload-sbom: publishes or deploys
+    build-image-index/build: publishes or deploys
+    build-image-index/upload-sbom: publishes or deploys
+    deprecated-base-image-check/check-images: publishes or deploys
+    fbc-fips-check-oci-ta/use-trusted-artifact: provided by the local checkout
+    fbc-fips-check-oci-ta/fips-operator-check-step-action: external reference
+plan:
+  not_run:
+  - apply-tags/apply-additional-tags
+  - validate-fbc/save-related-images
+  - validate-fbc/save-rendered-catalog

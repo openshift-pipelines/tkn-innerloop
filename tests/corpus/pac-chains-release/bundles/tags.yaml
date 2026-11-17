@@ -1,0 +1,4 @@
+ghcr.io/tektoncd/catalog/upstream/tasks/git-clone:0.7: sha256:31bb51c505bab692f979093433c6889fbe8a1c25135b4bd47dac4fc0bfab2022
+ghcr.io/tektoncd/catalog/upstream/tasks/golang-build:0.3: sha256:e68ddde093fbd077f16d8bd63cec6587bdaf64c13fc2cafbadc93a7fac8d77b6
+ghcr.io/tektoncd/catalog/upstream/tasks/golang-test:0.2: sha256:5d3cfdb03a4a27fd6515dc661f2afa714d775b691397d66a786584f4b3862357
+ghcr.io/tektoncd/catalog/upstream/tasks/oracle-cloud-storage-upload:0.2: sha256:f1dd28da10dfb72ebbb3a5258e9f1ba6bfe82ee587311d708a7be3207f69e5e6

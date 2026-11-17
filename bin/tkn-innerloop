@@ -13,6 +13,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import textwrap
 import threading
@@ -47,6 +48,16 @@ SHELLS = ("sh", "bash", "/bin/sh", "/bin/bash")
 THINKING_SUFFIX = re.compile(r":(?:off|minimal|low|medium|high|xhigh|max)$")
 UNRESOLVED_IMAGE = re.compile(r"\$|\{\{")
 CONFIG_FILE = ".tekton-innerloop.yaml"
+BUNDLE_DIR_ENV = "TKN_INNERLOOP_BUNDLE_DIR"
+BUNDLE_KINDS = {"task": "Task", "pipeline": "Pipeline", "stepaction": "StepAction"}
+BUNDLE_INPUT = re.compile(
+    r"bundle:(?P<repo>[^@#\s]+)@(?P<digest>sha256:[0-9a-f]{64})#(?P<kind>[a-z]+)/(?P<name>[^/\s]+)"
+)
+DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
+# Konflux restores the checkout from an OCI artifact with these steps; locally the worktree is mounted.
+TRUSTED_ARTIFACTS = "quay.io/konflux-ci/build-trusted-artifacts"
+GIT_CLONE_BUNDLE = re.compile(r"/task-git-clone[^/@]*@")
+PROVIDED = "provided by the local checkout"
 
 
 def style(text: str, color: str, stream=None) -> str:
@@ -85,7 +96,7 @@ def inspect_pipeline(path: Path) -> None:
     references = 0
     for key, source in sources.items():
         image = source["step"].get("image")
-        origin = f" · from {', '.join(source['defined_in'])}" if source["defined_in"] else ""
+        origin = f" · from {', '.join(map(input_label, source['defined_in']))}" if source["defined_in"] else ""
         if source["task_context"].get("matrix"):
             origin += " · matrix"
         if image:
@@ -142,9 +153,13 @@ def default_base(root: Path) -> str:
     raise ValueError("Cannot tell the PR target branch; pass --base REF")
 
 
+def cache_home() -> Path:
+    return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+
+
 def cache_dir(root: Path) -> Path:
     """Per-checkout state, kept out of the working tree so repository-wide tools never see it."""
-    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    base = cache_home()
     key = hashlib.sha256(str(root.resolve()).encode()).hexdigest()[:12]
     return base / "tkn-innerloop" / f"{root.name}-{key}"
 
@@ -163,7 +178,9 @@ def source_path(root: Path, relative: str) -> Path:
 
 
 def plan_input(root: Path, name: str, resolved: str | None) -> Path:
-    """A plan input: a repository file, or the plan's tkn pac resolve output in the cache."""
+    """A plan input: a repository file, a fetched bundle object, or the plan's tkn pac resolve output."""
+    if name.startswith("bundle:"):
+        return bundle_path(name)
     if name != resolved:
         return source_path(root, name)
     path = cache_dir(root) / name
@@ -315,6 +332,194 @@ def ref_note(ref: object, kind: str = "Task") -> str:
     return f"{ref.get('kind') or kind} reference, contents not read"
 
 
+class BundleError(ValueError):
+    """A bundles-resolver reference that could not be fetched or read."""
+
+
+_bundle_digests: dict[str, str] = {}
+_bundle_failures: dict[str, BundleError] = {}
+
+
+def skopeo(*args: str, timeout: float = 120) -> str:
+    tool = shutil.which("skopeo")
+    if not tool:
+        raise BundleError("install skopeo to fetch Tekton bundles")
+    try:
+        result = subprocess.run(
+            [tool, *args], capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BundleError(f"skopeo failed: {exc}") from None
+    if result.returncode:
+        reason = (result.stderr.strip().splitlines() or ["no output"])[-1]
+        raise BundleError(f"skopeo failed: {reason}")
+    return result.stdout
+
+
+def split_image(image: str) -> tuple[str, str | None, str | None]:
+    """Repository, tag and digest of an image reference such as repo:tag@sha256:..."""
+    base, _, digest = image.partition("@")
+    slash, colon = base.rfind("/"), base.rfind(":")
+    if colon > slash:
+        return base[:colon], base[colon + 1 :], digest or None
+    return base, None, digest or None
+
+
+def bundle_input(image: str, kind: str, name: str) -> str:
+    """The plan input name of a bundle object, pinned to a digest.
+
+    skopeo rejects references with both a tag and a digest, so the digest alone is kept.
+    """
+    repo, tag, digest = split_image(image.strip())
+    if digest is None:
+        reference = f"{repo}:{tag or 'latest'}"
+        if reference not in _bundle_digests:
+            _bundle_digests[reference] = skopeo(
+                "inspect", "--format", "{{.Digest}}", f"docker://{reference}"
+            ).strip()
+        digest = _bundle_digests[reference]
+    if not DIGEST.fullmatch(digest):
+        raise BundleError(f"unsupported bundle digest {digest}")
+    return f"bundle:{repo}@{digest}#{kind}/{name}"
+
+
+def bundle_location(base: Path, repo: str, digest: str, kind: str, name: str) -> Path:
+    def safe(text: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "_", text)
+
+    return base.joinpath(*map(safe, repo.split("/")), digest.split(":")[1], f"{kind}-{safe(name)}.yaml")
+
+
+def bundle_path(input_name: str) -> Path:
+    """The local copy of a bundle object: from TKN_INNERLOOP_BUNDLE_DIR, the cache, or the registry.
+
+    Objects are pinned to a digest, so a cached copy never goes stale.
+    """
+    match = BUNDLE_INPUT.fullmatch(input_name)
+    if not match:
+        raise ValueError(f"Malformed bundle input: {input_name}")
+    parts = match.group("repo", "digest", "kind", "name")
+    mirror = os.environ.get(BUNDLE_DIR_ENV)
+    if mirror and (path := bundle_location(Path(mirror), *parts)).is_file():
+        return path
+    path = bundle_location(cache_home() / "tkn-innerloop" / "bundles", *parts)
+    if path.is_file():
+        return path
+    if input_name in _bundle_failures:
+        raise _bundle_failures[input_name]
+    try:
+        data = download_bundle(*parts)
+    except BundleError as exc:
+        _bundle_failures[input_name] = exc
+        raise
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f".{path.name}.{os.getpid()}")
+    partial.write_bytes(data)
+    partial.replace(path)
+    return path
+
+
+def download_bundle(repo: str, digest: str, kind: str, name: str) -> bytes:
+    """The raw object in the bundle layer annotated with its kind and name."""
+    print(
+        style(f"  … Bundle    fetching {repo.rsplit('/', 1)[-1]} ({kind} {name})", "2", sys.stderr),
+        file=sys.stderr,
+        flush=True,
+    )
+    with tempfile.TemporaryDirectory(prefix="tkn-innerloop-bundle-") as tmp:
+        skopeo("copy", "-q", f"docker://{repo}@{digest}", f"dir:{tmp}")
+        try:
+            manifest = json.loads((Path(tmp) / "manifest.json").read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BundleError(f"cannot read the bundle manifest: {exc}") from None
+        layers = [
+            layer
+            for layer in manifest.get("layers") or []
+            if str((layer.get("annotations") or {}).get("dev.tekton.image.kind", "")).lower() == kind
+            and (layer.get("annotations") or {}).get("dev.tekton.image.name") == name
+        ]
+        if not layers:
+            raise BundleError(f"the bundle has no {kind} named {name}")
+        blob = Path(tmp) / str(layers[0].get("digest", "")).split(":")[-1]
+        try:
+            with tarfile.open(blob) as tar:
+                members = [member for member in tar.getmembers() if member.isfile()]
+                if len(members) != 1:
+                    raise BundleError(f"the {kind} {name} layer should hold one file")
+                return tar.extractfile(members[0]).read()
+        except (OSError, tarfile.TarError) as exc:
+            raise BundleError(f"cannot read the {kind} {name} layer: {exc}") from None
+
+
+def bundle_definition(ref: object, kind: str) -> tuple[dict, str] | None:
+    """The object a bundles-resolver reference points to and its plan input name, else None.
+
+    Raises BundleError when it is a bundle reference that cannot be fetched or read.
+    """
+    if not isinstance(ref, dict) or ref.get("resolver") != "bundles":
+        return None
+    params = {
+        p.get("name"): p.get("value") for p in ref.get("params") or [] if isinstance(p, dict)
+    }
+    image, name, wanted = params.get("bundle"), params.get("name"), params.get("kind", kind)
+    if not all(isinstance(v, str) and v and "$(" not in v for v in (image, name, wanted)):
+        raise BundleError("bundle, name and kind must be literal values")
+    if wanted.lower() != kind.lower():
+        raise BundleError(f"expected a {kind} bundle, not {wanted}")
+    input_name = bundle_input(image, kind.lower(), name)
+    try:
+        document = yaml.safe_load(bundle_path(input_name).read_text())
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise BundleError(f"cannot read the {kind} {name}: {exc}") from None
+    if not isinstance(document, dict) or document.get("kind") != kind:
+        raise BundleError(f"the bundle object {name} is not a {kind}")
+    return document, input_name
+
+
+def input_label(name: str) -> str:
+    match = BUNDLE_INPUT.fullmatch(name)
+    return f"bundle {match['repo'].rsplit('/', 1)[-1]}" if match else name
+
+
+def restored_paths(steps: list) -> list[str]:
+    """Directories Konflux trusted-artifact steps restore the source checkout into, longest first."""
+    paths = set()
+    for step in steps:
+        args = step.get("args") if isinstance(step, dict) else None
+        if trusted_artifact(step) and isinstance(args, list) and args[:1] == ["use"]:
+            for arg in args[1:]:
+                artifact, _, path = str(arg).partition("=")
+                if "SOURCE_ARTIFACT" in artifact and path.startswith("/"):
+                    paths.add(path.rstrip("/"))
+    return sorted(paths, key=len, reverse=True)
+
+
+def bind_restored(value: object, paths: list[str]) -> object:
+    """Point paths of the restored checkout at $WORKSPACE; images are left alone."""
+    if not paths:
+        return value
+    if isinstance(value, str):
+        for path in paths:
+            value = re.sub(re.escape(path) + r"(?![\w.-])", "$WORKSPACE", value)
+        return value
+    if isinstance(value, dict):
+        return {key: item if key == "image" else bind_restored(item, paths) for key, item in value.items()}
+    if isinstance(value, list):
+        return [bind_restored(item, paths) for item in value]
+    return value
+
+
+def trusted_artifact(step: object) -> bool:
+    return isinstance(step, dict) and str(step.get("image", "")).startswith(TRUSTED_ARTIFACTS)
+
+
+def provided_by_checkout(source: dict) -> bool:
+    """Konflux clone and trusted-artifact steps only recreate the checkout that is mounted locally."""
+    return trusted_artifact(source["step"]) or any(
+        GIT_CLONE_BUNDLE.search(name) for name in source.get("defined_in", [])
+    )
+
+
 def annotations(raw: object) -> dict:
     metadata = raw.get("metadata") if isinstance(raw, dict) else None
     found = metadata.get("annotations") if isinstance(metadata, dict) else None
@@ -412,15 +617,22 @@ def inventory(
                 ref = run_spec["pipelineRef"]
                 name = local_ref(ref, "Pipeline")
                 if name is None:
-                    raise ValueError(
-                        f"Document {number}: remote pipelineRef is not supported ({ref_note(ref)}); "
-                        "keep the Pipeline in the repository"
-                    )
-                try:
-                    pipeline_doc, where = definitions.find("Pipeline", name, own, own_documents)
-                except LookupError as exc:
-                    raise ValueError(f"Document {number}: pipelineRef {name}: {exc}{hint}") from None
-                spec = mapping(pipeline_doc.get("spec"), f"Pipeline {name} spec")
+                    try:
+                        fetched = bundle_definition(ref, "Pipeline")
+                    except BundleError as exc:
+                        raise ValueError(f"Document {number}: bundle pipelineRef: {exc}") from None
+                    if fetched is None:
+                        raise ValueError(
+                            f"Document {number}: remote pipelineRef is not supported ({ref_note(ref)}); "
+                            "keep the Pipeline in the repository"
+                        )
+                    pipeline_doc, where = fetched
+                else:
+                    try:
+                        pipeline_doc, where = definitions.find("Pipeline", name, own, own_documents)
+                    except LookupError as exc:
+                        raise ValueError(f"Document {number}: pipelineRef {name}: {exc}{hint}") from None
+                spec = mapping(pipeline_doc.get("spec"), f"Pipeline {name or where} spec")
                 if where != own:
                     defined.add(where)
         if not isinstance(spec, dict) or not spec.get("tasks"):
@@ -447,7 +659,16 @@ def inventory(
             if not task_spec and task.get("taskRef"):
                 name = local_ref(task["taskRef"], "Task")
                 if name is None:
-                    note = ref_note(task["taskRef"])
+                    try:
+                        fetched = bundle_definition(task["taskRef"], "Task")
+                    except BundleError as exc:
+                        note = f"bundle reference not fetched: {exc}"
+                    else:
+                        if fetched is None:
+                            note = ref_note(task["taskRef"])
+                        else:
+                            task_spec = mapping(fetched[0].get("spec"), f"Task {fetched[1]} spec")
+                            task_defined.add(fetched[1])
                 else:
                     try:
                         task_doc, where = definitions.find("Task", name, own, own_documents)
@@ -462,6 +683,7 @@ def inventory(
             whole_task = not steps
             if whole_task:
                 steps = [{"name": "task", "ref": task.get("taskRef", {})}]
+            restored = restored_paths(steps)
             for index, step in enumerate(steps):
                 if not isinstance(step, dict) or not step:
                     raise ValueError(f"Document {number}: task {task_name} has a step that is not a mapping")
@@ -476,23 +698,35 @@ def inventory(
                 action = None
                 if not whole_task and step.get("ref") and not step.get("image"):
                     name = local_ref(step["ref"], "StepAction")
+                    action_doc = None
                     if name is None:
-                        step_note = step_note or ref_note(step["ref"], "StepAction")
+                        try:
+                            fetched = bundle_definition(step["ref"], "StepAction")
+                        except BundleError as exc:
+                            step_note = step_note or f"bundle reference not fetched: {exc}"
+                        else:
+                            if fetched is None:
+                                step_note = step_note or ref_note(step["ref"], "StepAction")
+                            else:
+                                action_doc, where = fetched
+                                name = (action_doc.get("metadata") or {}).get("name") or where
                     else:
                         try:
                             action_doc, where = definitions.find("StepAction", name, own, own_documents)
                         except LookupError as exc:
                             step_note = f"{exc}{hint}"
-                        else:
-                            action_spec = mapping(action_doc.get("spec"), f"StepAction {name} spec")
-                            action = {"name": name, **{k: action_spec[k] for k in ("params", "results") if k in action_spec}}
-                            values = bound_values(action_spec.get("params"), step.get("params"), values)
-                            step = {
-                                **{k: v for k, v in action_spec.items() if k not in ("params", "results")},
-                                **{k: v for k, v in step.items() if k != "ref"},
-                            }
-                            if where != own:
-                                step_defined.add(where)
+                    if action_doc is not None:
+                        action_spec = mapping(action_doc.get("spec"), f"StepAction {name} spec")
+                        action = {"name": name, **{k: action_spec[k] for k in ("params", "results") if k in action_spec}}
+                        values = bound_values(action_spec.get("params"), step.get("params"), values)
+                        step = {
+                            **{k: v for k, v in action_spec.items() if k not in ("params", "results")},
+                            **{k: v for k, v in step.items() if k != "ref"},
+                        }
+                        if where != own:
+                            step_defined.add(where)
+                if not trusted_artifact(step):
+                    step = bind_restored(step, restored)
                 found[key] = {
                     "step": bind_image(step, values),
                     "pipeline_context": pipeline_context,
@@ -798,13 +1032,20 @@ def print_diff(plan: dict, root: Path) -> None:
             )
 
 
-def agent_plan(cmd: list[str], root: Path, timeout: float) -> dict:
+def agent_plan(cmd: list[str], root: Path, timeout: float, prompt: str = "") -> dict:
     events = queue.Queue()
     start = time.monotonic()
     message = None
     activity = "Connecting to agent"
     terminal = sys.stderr.isatty()
     next_draw = 0
+
+    def write_prompt(stream, text):
+        try:
+            stream.write(text)
+            stream.close()
+        except (BrokenPipeError, OSError):
+            pass
 
     def read_events(stream):
         try:
@@ -817,6 +1058,7 @@ def agent_plan(cmd: list[str], root: Path, timeout: float) -> dict:
         proc = subprocess.Popen(
             cmd,
             cwd=root,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=errors,
             text=True,
@@ -824,6 +1066,7 @@ def agent_plan(cmd: list[str], root: Path, timeout: float) -> dict:
         )
         reader = threading.Thread(target=read_events, args=(proc.stdout,), daemon=True)
         reader.start()
+        threading.Thread(target=write_prompt, args=(proc.stdin, prompt), daemon=True).start()
         try:
             while True:
                 elapsed = time.monotonic() - start
@@ -930,7 +1173,8 @@ Use source inventory IDs exactly, including the PipelineRun prefix for multi-doc
 files. Inspect pipeline_context for parameters and results. A task's parameters
 come from task_context params, with defaults in task_defaults; pipeline parameters
 come from pipeline_context. defined_in names the files referenced Tasks/Pipelines
-came from. A step with step_action was inlined from a local StepAction: inside
+came from; a bundle:<image>#<kind>/<name> entry is an object fetched from a Tekton
+bundle, already inlined, with no repository file to read. A step with step_action was inlined from a StepAction: inside
 it, $(params.x) means the step's own params, then the defaults in
 step_action.params. A task with task_context.matrix runs once per parameter
 combination: loop over every combination in a script edit or leave its steps
@@ -1005,6 +1249,13 @@ mark the step unresolved. Inspect pipeline_context annotations for follow-up
 PipelineRuns (on-pipelinerun) and treat them as dependencies.
 """
 
+KONFLUX_PROMPT = """Konflux git clone and trusted-artifact steps are outside the scope because
+the mounted worktree already is the source they would restore; paths they restored
+into are bound to $WORKSPACE. Treat them as completed prerequisites, not as missing
+ones. Their results map to the local context: a clone commit is $HEAD_SHA, and
+SOURCE_ARTIFACT or other artifact references need no local equivalent.
+"""
+
 
 def agent_model(requested: str | None) -> str:
     return requested or os.environ.get("TKN_INNERLOOP_AI_MODEL") or "haiku"
@@ -1012,13 +1263,16 @@ def agent_model(requested: str | None) -> str:
 
 def plan_prompt(relative: str, sources: dict, selected_ids: list[str], pac: bool = False) -> str:
     prompt = PLAN_PROMPT + (PAC_PROMPT if pac else "")
+    if any(provided_by_checkout(source) for source in sources.values()):
+        prompt += KONFLUX_PROMPT
     prompt += f"\nPipeline: {relative}\nRequested scope: {json.dumps(selected_ids)}\n"
     prompt += f"Available step IDs: {json.dumps(list(sources))}\n"
     prompt += f"Requested source inventory:\n{json.dumps({key: sources[key] for key in selected_ids}, separators=(',', ':'))}\n"
     return prompt
 
 
-def pi_command(prompt: str, model: str) -> list[str]:
+def pi_command(model: str) -> list[str]:
+    """The agent command; the prompt goes on stdin, since inlined pipelines exceed argv limits."""
     return [
         "pi",
         "-p",
@@ -1038,8 +1292,6 @@ def pi_command(prompt: str, model: str) -> list[str]:
         *([] if THINKING_SUFFIX.search(model) else ["--thinking", "off"]),
         "--model",
         model,
-        "--",
-        prompt,
     ]
 
 
@@ -1131,7 +1383,7 @@ def build_plan(
     feedback = ""
     for attempt in range(1, ATTEMPTS + 1):
         try:
-            proposed = agent_plan(pi_command(prompt + feedback, chosen), root, timeout)
+            proposed = agent_plan(pi_command(chosen), root, timeout, prompt + feedback)
             return assemble_plan(
                 proposed, root, relative, sources, selected_ids, resolved, extra_inputs
             )
@@ -1642,6 +1894,8 @@ def auto_scope(
         )
         if source["finally"]:
             left[key] = "runs after the pipeline"
+        elif provided_by_checkout(source):
+            left[key] = PROVIDED
         elif not step.get("image"):
             left[key] = "external reference"
         elif UNRESOLVED_IMAGE.search(step["image"]):
@@ -1786,7 +2040,9 @@ def plan_source(root: Path, pipeline: Path, refresh: bool = False) -> tuple[Path
         return pipeline, []
     relative = str(pipeline.relative_to(root))
     try:
-        definitions = sorted(definition_files(inventory(pipeline, root)))
+        definitions = sorted(
+            name for name in definition_files(inventory(pipeline, root)) if not name.startswith("bundle:")
+        )
     except (ValueError, KeyError, TypeError):
         definitions = []
     inputs = {name: digest(source_path(root, name)) for name in [relative, *definitions]}
@@ -1876,11 +2132,13 @@ def run_command(args: argparse.Namespace) -> int:
     scope = [key for key in sources if (key in wanted if explicit else key in auto)]
     if not scope:
         raise ValueError("Nothing in this pipeline can run locally; every step is cluster-only")
-    outside = [key for key in left if key not in scope]
+    outside = [key for key in left if key not in scope and left[key] != PROVIDED]
+    provided = sum(left[key] == PROVIDED and key not in scope for key in left)
     shown = ", ".join(outside[:3]) + (f" +{len(outside) - 3}" if len(outside) > 3 else "")
     stage(
         "Scope",
         f"{len(scope)} of {len(sources)} steps run locally"
+        + (f" · {provided} provided by the checkout" if provided else "")
         + (f" · cluster-only: {shown}" if outside else ""),
     )
     plan_file, plan = ensure_plan(

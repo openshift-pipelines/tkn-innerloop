@@ -1,40 +1,40 @@
 source: .tekton/release.yaml
 pac: true
 steps:
-  git-clone/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  git-clone/clone:
+    image: ghcr.io/tektoncd/github.com/tektoncd/pipeline/cmd/git-init:v0.29.0
     defined_in:
+    - bundle:ghcr.io/tektoncd/catalog/upstream/tasks/git-clone@sha256:31bb51c505bab692f979093433c6889fbe8a1c25135b4bd47dac4fc0bfab2022#task/git-clone
     - release/release-pipeline.yaml
   precheck/task:
     reference: true
     note: git resolver reference, contents not read
     defined_in:
     - release/release-pipeline.yaml
-  unit-tests/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  unit-tests/unit-test:
+    image: docker.io/library/golang:latest
     defined_in:
+    - bundle:ghcr.io/tektoncd/catalog/upstream/tasks/golang-test@sha256:5d3cfdb03a4a27fd6515dc661f2afa714d775b691397d66a786584f4b3862357#task/golang-test
     - release/release-pipeline.yaml
-  build/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  build/build:
+    image: docker.io/library/golang:latest
     defined_in:
+    - bundle:ghcr.io/tektoncd/catalog/upstream/tasks/golang-build@sha256:e68ddde093fbd077f16d8bd63cec6587bdaf64c13fc2cafbadc93a7fac8d77b6#task/golang-build
     - release/release-pipeline.yaml
   publish-images/task:
     reference: true
     note: git resolver reference, contents not read
     defined_in:
     - release/release-pipeline.yaml
-  publish-to-bucket/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  publish-to-bucket/upload:
+    image: ghcr.io/oracle/oci-cli:sha-b324bd6
     defined_in:
+    - bundle:ghcr.io/tektoncd/catalog/upstream/tasks/oracle-cloud-storage-upload@sha256:f1dd28da10dfb72ebbb3a5258e9f1ba6bfe82ee587311d708a7be3207f69e5e6#task/oracle-cloud-storage-upload
     - release/release-pipeline.yaml
-  publish-to-bucket-latest/task:
-    reference: true
-    note: bundles resolver reference, contents not read
+  publish-to-bucket-latest/upload:
+    image: ghcr.io/oracle/oci-cli:sha-b324bd6
     defined_in:
+    - bundle:ghcr.io/tektoncd/catalog/upstream/tasks/oracle-cloud-storage-upload@sha256:f1dd28da10dfb72ebbb3a5258e9f1ba6bfe82ee587311d708a7be3207f69e5e6#task/oracle-cloud-storage-upload
     - release/release-pipeline.yaml
   report-bucket/create-results:
     image: docker.io/library/alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
@@ -55,18 +55,20 @@ steps:
     - release/release-pipeline.yaml
 scope:
   local:
+  - git-clone/clone
+  - unit-tests/unit-test
+  - build/build
+  - publish-to-bucket/upload
+  - publish-to-bucket-latest/upload
   - report-bucket/create-results
   - wait-for-chains/wait-and-extract
   - prepare-draft-release/setup
   cluster:
-    git-clone/task: external reference
     precheck/task: external reference
-    unit-tests/task: external reference
-    build/task: external reference
     publish-images/task: external reference
-    publish-to-bucket/task: external reference
-    publish-to-bucket-latest/task: external reference
     create-draft-release/task: external reference
-
 plan:
-  not_run: [wait-for-chains/wait-and-extract]
+  not_run:
+  - wait-for-chains/wait-and-extract
+  - publish-to-bucket/upload
+  - publish-to-bucket-latest/upload

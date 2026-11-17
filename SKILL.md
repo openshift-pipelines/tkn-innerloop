@@ -31,8 +31,11 @@ infer that a command is safe or runnable from its name.
 All PipelineRuns in a multi-document YAML file are inspected; a file without a
 PipelineRun uses its Pipelines. Local `pipelineRef` and `taskRef` names are
 inlined from the repository's YAML files and those files become plan inputs.
-A missing or remote `pipelineRef` is an error. Missing, duplicate, ClusterTask
-and resolver task references stay unresolved; `inspect` shows the reason. Use the full ID
+Tekton bundle references (`resolver: bundles`) are fetched with skopeo, cached
+and inlined the same way. A missing or other remote `pipelineRef` is an error.
+Missing, duplicate, ClusterTask and other resolver task references stay unresolved;
+`inspect` shows the reason. Konflux clone and trusted-artifact steps are provided
+by the local checkout and never run. Use the full ID
 shown by `inspect` to select ambiguous names: `pipelinerun/task/step` for multiple
 PipelineRuns, or `task/step` for a single one. Preserve follow-up annotations and
 cross-PipelineRun result requirements during conversion; leave them unresolved
