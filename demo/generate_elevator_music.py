@@ -11,7 +11,7 @@ import numpy as np
 
 SR = 44100
 DURATION = float(sys.argv[1]) if len(sys.argv) > 1 else 56.5
-OUT_WAV = sys.argv[2] if len(sys.argv) > 2 else "/home/chmouel/git/work/tkn-innerloop/demo/elevator-music.wav"
+OUT_WAV = sys.argv[2] if len(sys.argv) > 2 else "demo/elevator-music.wav"
 
 BPM = 116.0
 BEAT = 60.0 / BPM

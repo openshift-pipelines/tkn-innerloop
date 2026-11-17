@@ -1,5 +1,4 @@
-Output "/home/chmouel/git/work/tkn-innerloop/demo/tkn-innerloop-demo.mp4"
-Output "/home/chmouel/git/work/tkn-innerloop/demo/tkn-innerloop-demo.gif"
+Output "demo/tkn-innerloop-demo.mp4"
 
 Set Shell "bash"
 Set FontSize 24
@@ -10,18 +9,20 @@ Set Theme "Catppuccin Mocha"
 Set TypingSpeed 35ms
 
 Hide
-Type "export PATH=/home/chmouel/git/work/tkn-innerloop/bin:$PATH"
+Type "export PATH=$PWD/bin:$PWD/demo:$PATH"
 Enter
-Type "export PS1='\[\e[1;36m\]pac/main\[\e[0m\] \[\e[1;32m\]❯\[\e[0m\] '"
+Type "cd ${PAC_REPO:-.}"
 Enter
-Type "/home/chmouel/git/work/tkn-innerloop/demo/banner.sh intro"
+Type "export PS1='\[\e[1;36m\]pipelines-as-code\[\e[0m\] \[\e[1;32m\]❯\[\e[0m\] '"
+Enter
+Type "banner.sh intro"
 Enter
 Show
 
 Sleep 5.5s
 
 Hide
-Type "/home/chmouel/git/work/tkn-innerloop/demo/banner.sh step1"
+Type "banner.sh step1"
 Enter
 Show
 Sleep 3.5s
@@ -31,7 +32,7 @@ Enter
 Sleep 5.5s
 
 Hide
-Type "/home/chmouel/git/work/tkn-innerloop/demo/banner.sh step2"
+Type "banner.sh step2"
 Enter
 Show
 Sleep 3.5s
@@ -44,12 +45,12 @@ Enter
 Sleep 5s
 
 Hide
-Type "/home/chmouel/git/work/tkn-innerloop/demo/banner.sh step3"
+Type "banner.sh step3"
 Enter
 Show
 Sleep 4s
 
-Type "/home/chmouel/git/work/tkn-innerloop/demo/toggle-defects.sh break && sed -n '6,16p' pkg/params/innerloop_demo_test.go"
+Type "toggle-defects.sh break && sed -n '6,16p' pkg/params/innerloop_demo_test.go"
 Enter
 Sleep 2.5s
 Type "go test -run TestInnerLoop ./pkg/params"
@@ -60,12 +61,12 @@ Enter
 Sleep 5.5s
 
 Hide
-Type "/home/chmouel/git/work/tkn-innerloop/demo/banner.sh step4"
+Type "banner.sh step4"
 Enter
 Show
 Sleep 4s
 
-Type "/home/chmouel/git/work/tkn-innerloop/demo/toggle-defects.sh fix"
+Type "toggle-defects.sh fix"
 Enter
 Sleep 1.5s
 Type "tkn-innerloop run .tekton/linter.yaml"
@@ -73,7 +74,7 @@ Enter
 Sleep 7s
 
 Hide
-Type "/home/chmouel/git/work/tkn-innerloop/demo/toggle-defects.sh clean"
+Type "toggle-defects.sh clean"
 Enter
 Sleep 500ms
 Show
