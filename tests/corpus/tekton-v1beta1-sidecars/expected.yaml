@@ -1,0 +1,31 @@
+source: tekton/ci/jobs/e2e-kind.yaml
+pac: false
+steps:
+  clone-repo/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  check-name-matches/check-name:
+    image: docker.io/library/alpine
+    defined_in:
+    - tekton/ci/shared/common-tasks.yaml
+  check-git-files-changed/check-files-changed:
+    image: ghcr.io/tektoncd/plumbing/test-runner@sha256:d6a49b0d6822f4db7ede60d3f6bb41c1278079ad7c631fcaf00a609a977d0ac0
+    defined_in:
+    - tekton/ci/shared/common-tasks.yaml
+  e2e-tests/make-artifacts-folder:
+    image: docker.io/library/alpine:3.15.3
+  e2e-tests/kind:
+    image: ghcr.io/tektoncd/plumbing/kind-e2e:latest
+  upload-logs/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+    finally: true
+scope:
+  local:
+  - check-name-matches/check-name
+  - check-git-files-changed/check-files-changed
+  - e2e-tests/make-artifacts-folder
+  - e2e-tests/kind
+  cluster:
+    clone-repo/task: external reference
+    upload-logs/task: runs after the pipeline

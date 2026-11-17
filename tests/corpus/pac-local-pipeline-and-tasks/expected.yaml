@@ -1,0 +1,42 @@
+source: .tekton/update-dependencies.yaml
+pac: true
+steps:
+  update-binaries/clone-git-repository:
+    image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8:v1.8.2-8@sha256:a538c423e7a11aae6ae582a411fdb090936458075f99af4ce5add038bb6983e8
+    defined_in:
+    - .tekton/pipeline/update-repository.yaml
+    - .tekton/tasks/update-repository.yaml
+  update-binaries/run-update-script:
+    image: quay.io/redhat-pipeline-service/dependencies-update:{{ source_branch }}
+    defined_in:
+    - .tekton/pipeline/update-repository.yaml
+    - .tekton/tasks/update-repository.yaml
+  update-binaries/create-pull-request:
+    image: quay.io/redhat-appstudio/github-app-token@sha256:b4f2af12e9beea68055995ccdbdb86cfe1be97688c618117e5da2243dc1da18e
+    defined_in:
+    - .tekton/pipeline/update-repository.yaml
+    - .tekton/tasks/update-repository.yaml
+  update-images/clone-git-repository:
+    image: registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8:v1.8.2-8@sha256:a538c423e7a11aae6ae582a411fdb090936458075f99af4ce5add038bb6983e8
+    defined_in:
+    - .tekton/pipeline/update-repository.yaml
+    - .tekton/tasks/update-repository.yaml
+  update-images/run-update-script:
+    image: quay.io/redhat-pipeline-service/dependencies-update:{{ source_branch }}
+    defined_in:
+    - .tekton/pipeline/update-repository.yaml
+    - .tekton/tasks/update-repository.yaml
+  update-images/create-pull-request:
+    image: quay.io/redhat-appstudio/github-app-token@sha256:b4f2af12e9beea68055995ccdbdb86cfe1be97688c618117e5da2243dc1da18e
+    defined_in:
+    - .tekton/pipeline/update-repository.yaml
+    - .tekton/tasks/update-repository.yaml
+scope:
+  local:
+  - update-binaries/clone-git-repository
+  - update-images/clone-git-repository
+  cluster:
+    update-binaries/run-update-script: image has an unresolved substitution
+    update-binaries/create-pull-request: publishes or deploys
+    update-images/run-update-script: image has an unresolved substitution
+    update-images/create-pull-request: publishes or deploys

@@ -1,0 +1,10 @@
+source: examples/v1/pipelineruns/stepaction-params.yaml
+pac: false
+steps:
+  run-action/action-runner:
+    image: mirror.gcr.io/bash
+    step_action: step-action
+scope:
+  local:
+  - run-action/action-runner
+  cluster: {}

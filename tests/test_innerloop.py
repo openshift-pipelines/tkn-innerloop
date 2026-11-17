@@ -5,6 +5,7 @@ import io
 import json
 import os
 import runpy
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ import yaml
 CLI = Path(__file__).resolve().parents[1] / "bin/tkn-innerloop"
 MODULE = runpy.run_path(str(CLI))
 GLOBALS = MODULE["run_plan"].__globals__
+CORPUS = Path(__file__).resolve().parent / "corpus"
 
 
 class InnerloopTests(unittest.TestCase):
@@ -1210,6 +1212,52 @@ class InnerloopTests(unittest.TestCase):
             )
         self.assertIn("tkn pac resolve failed (boom)", out.getvalue())
 
+
+class CorpusTests(unittest.TestCase):
+    """Real pipelines from other repositories; see tests/corpus/SOURCES.md."""
+
+    def check_step(self, source, expected):
+        step = source["step"]
+        for field, value in expected.items():
+            if field == "reference":
+                self.assertEqual(not step.get("image"), value)
+            elif field == "note":
+                self.assertIn(value, source.get("reference_note", ""))
+            elif field == "image":
+                self.assertEqual(step.get("image"), value)
+            elif field == "step_action":
+                self.assertEqual(source.get("step_action", {}).get("name"), value)
+            elif field == "matrix":
+                self.assertEqual(bool(source["task_context"].get("matrix")), value)
+            elif field == "script_contains":
+                for text in value:
+                    self.assertIn(text, step.get("script", ""))
+            else:
+                self.assertEqual(source[field], value, field)
+
+    def test_corpus_matches_expected(self):
+        cases = sorted(path.parent for path in CORPUS.glob("*/expected.yaml"))
+        self.assertGreaterEqual(len(cases), 10)
+        for case in cases:
+            expected = yaml.safe_load((case / "expected.yaml").read_text())
+            with self.subTest(case=case.name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                shutil.copytree(case / "repo", root, dirs_exist_ok=True)
+                entry = root / expected["source"]
+                if expected.get("error"):
+                    with self.assertRaisesRegex(ValueError, expected["error"]):
+                        MODULE["inventory"](entry, root)
+                    continue
+                sources = MODULE["inventory"](entry, root)
+                documents = list(yaml.safe_load_all(entry.read_text()))
+                self.assertEqual(MODULE["pac_profile"](documents), expected["pac"])
+                self.assertEqual(list(sources), list(expected["steps"]))
+                for key, step in expected["steps"].items():
+                    with self.subTest(step=key):
+                        self.check_step(sources[key], step)
+                keep, left = MODULE["auto_scope"](sources, MODULE["cluster_patterns"](root))
+                self.assertEqual(keep, expected["scope"]["local"])
+                self.assertEqual(left, expected["scope"]["cluster"])
 
 if __name__ == "__main__":
     unittest.main()

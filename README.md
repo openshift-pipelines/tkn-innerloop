@@ -203,6 +203,12 @@ PAC_REPO=~/git/pac/main ./demo/record.sh
 aniflow --check README.md poc-report.md presentation.md
 ```
 
+`tests/corpus/` holds 17 real PipelineRuns and Pipelines from Pipelines-as-Code,
+Konflux, Tekton Chains, tektoncd/pipeline examples and tektoncd/plumbing, each
+pinned to a commit. The unit tests check what inventory and the automatic scope
+return for each one, and each case's README describes the plan a good model
+should produce. `tests/corpus/README.md` explains how to add a case.
+
 `demo/record.sh` generates the plan during recording and checks expected command
 exit statuses. It refuses to overwrite an existing fixture, cleans up its own
 unchanged fixture on exit, and leaves an execution plan beside the video.

@@ -1,0 +1,52 @@
+source: .tekton/linter.yaml
+pac: true
+steps:
+  linters/fetch-repo:
+    reference: true
+    note: hub resolver reference, contents not read
+  linters/generate-release-yaml:
+    image: registry.access.redhat.com/ubi9/python-312
+  linters/codespell:
+    image: registry.access.redhat.com/ubi9/python-312
+  linters/shellcheck:
+    image: docker.io/koalaman/shellcheck-alpine:stable
+  linters/commit-validation:
+    image: registry.access.redhat.com/ubi9/python-312
+  linters/check-e2e-tests-naming:
+    image: docker.io/golang:1.27
+  linters/check-test-conventions:
+    image: docker.io/golang:1.27
+  linters/check-generated-schemas:
+    image: docker.io/golang:1.27
+  linters/yamllint:
+    image: docker.io/cytopia/yamllint
+  linters/zizmor:
+    image: registry.access.redhat.com/ubi9/python-312
+  linters/ruff-lint:
+    image: registry.access.redhat.com/ubi9/python-312
+  linters/ruff-format:
+    image: registry.access.redhat.com/ubi9/python-312
+  linters/markdownlint:
+    image: docker.io/thegeeklab/markdownlint-cli
+  linters/vale:
+    image: registry.access.redhat.com/ubi9/python-312
+  linters/goreleaser-check:
+    image: registry.access.redhat.com/ubi9/python-312
+scope:
+  local:
+  - linters/generate-release-yaml
+  - linters/codespell
+  - linters/shellcheck
+  - linters/commit-validation
+  - linters/check-e2e-tests-naming
+  - linters/check-test-conventions
+  - linters/check-generated-schemas
+  - linters/yamllint
+  - linters/zizmor
+  - linters/ruff-lint
+  - linters/ruff-format
+  - linters/markdownlint
+  - linters/vale
+  - linters/goreleaser-check
+  cluster:
+    linters/fetch-repo: external reference

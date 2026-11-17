@@ -1,0 +1,25 @@
+source: .tekton/release-pipeline.yaml
+pac: true
+steps:
+  fetch-repository/task:
+    reference: true
+    note: no Task named git-clone in the repository; a Pipelines-as-Code annotation may fetch it
+  release-yaml/push-release-to-branch:
+    image: registry.access.redhat.com/ubi9/python-312
+    script_contains:
+    - $HEAD_SHA
+  gorelease/pull:
+    image: docker.io/goreleaser/goreleaser
+    defined_in:
+    - .tekton/tasks/goreleaser.yaml
+  gorelease/release:
+    image: docker.io/goreleaser/goreleaser
+    defined_in:
+    - .tekton/tasks/goreleaser.yaml
+scope:
+  local:
+  - gorelease/pull
+  cluster:
+    fetch-repository/task: external reference
+    release-yaml/push-release-to-branch: publishes or deploys
+    gorelease/release: publishes or deploys

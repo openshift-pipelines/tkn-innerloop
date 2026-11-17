@@ -1,0 +1,30 @@
+source: tekton/ci/jobs/tekton-golang-coverage.yaml
+pac: false
+steps:
+  check-name-matches/check-name:
+    image: docker.io/library/alpine
+    defined_in:
+    - tekton/ci/shared/common-tasks.yaml
+  split-full-repo-name/split-name:
+    image: docker.io/library/ubuntu
+  clone-coverage-upload/clone:
+    image: ghcr.io/tektoncd/github.com/tektoncd/pipeline/cmd/git-init:v0.18.1
+    defined_in:
+    - tekton/ci/stepactions/git-batch-merge.yaml
+    step_action: git-batch-merge
+  clone-coverage-upload/coverage:
+    image: ghcr.io/tektoncd/plumbing/coverage:latest
+    step_action: go-coverage
+  clone-coverage-upload/upload:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:379.0.0-slim@sha256:d844877c7aaa06a0072979230c68417ddb0f27087277f29747c7169d6ed0d2b9
+    defined_in:
+    - tekton/ci/stepactions/gcs-upload.yaml
+    step_action: gcs-upload
+scope:
+  local:
+  - check-name-matches/check-name
+  - split-full-repo-name/split-name
+  - clone-coverage-upload/clone
+  - clone-coverage-upload/coverage
+  - clone-coverage-upload/upload
+  cluster: {}

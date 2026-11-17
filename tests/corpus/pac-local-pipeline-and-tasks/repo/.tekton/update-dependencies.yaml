@@ -1,0 +1,39 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    pipelinesascode.tekton.dev/on-event: "[push]"
+    pipelinesascode.tekton.dev/on-target-branch: "[main]"
+    pipelinesascode.tekton.dev/pipeline: "[.tekton/pipeline/update-repository.yaml]"
+    pipelinesascode.tekton.dev/task-1: "[.tekton/tasks/update-repository.yaml]"
+    pipelinesascode.tekton.dev/max-keep-runs: "5"
+  name: update-pipeline-service-dependencies
+spec:
+  timeouts:
+    pipeline: "0h20m0s"
+    tasks: "0h5m0s"
+  pipelineRef:
+    name: update-repository
+  params:
+    - name: repo_name
+      value: "{{ repo_name }}"
+    - name: repo_owner
+      value: "{{ repo_owner }}"
+    - name: repo_url
+      value: "{{ repo_url }}"
+    - name: source_branch
+      value: "{{ source_branch }}"
+  workspaces:
+    - name: basic-auth
+      workspace: basic-auth
+      secret:
+        secretName: "{{ git_auth_secret }}"
+    - name: workdir
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi

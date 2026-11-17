@@ -1,0 +1,53 @@
+source: integration-tests/pipelines/konflux-e2e-tests-pipeline.yaml
+pac: false
+steps:
+  check-if-e2e-irrelevant/task:
+    reference: true
+    note: git resolver reference, contents not read
+  test-metadata/task:
+    reference: true
+    note: git resolver reference, contents not read
+  provision-kind-cluster/task:
+    reference: true
+    note: git resolver reference, contents not read
+  deploy-konflux/task:
+    reference: true
+    note: git resolver reference, contents not read
+  release-service-e2e-tests/e2e-test:
+    image: registry.access.redhat.com/ubi9/go-toolset:9.7-1768393489
+  release-service-e2e-tests/secure-push-oci:
+    reference: true
+    note: git resolver reference, contents not read
+  release-service-e2e-tests/fail-if-any-step-failed:
+    reference: true
+    note: git resolver reference, contents not read
+  collect-and-upload-coverage/task:
+    reference: true
+    note: git resolver reference, contents not read
+    finally: true
+  store-pipeline-status/task:
+    reference: true
+    note: git resolver reference, contents not read
+    finally: true
+  deprovision-kind-cluster/task:
+    reference: true
+    note: git resolver reference, contents not read
+    finally: true
+  pull-request-status-message/task:
+    reference: true
+    note: git resolver reference, contents not read
+    finally: true
+scope:
+  local:
+  - release-service-e2e-tests/e2e-test
+  cluster:
+    check-if-e2e-irrelevant/task: external reference
+    test-metadata/task: external reference
+    provision-kind-cluster/task: external reference
+    deploy-konflux/task: external reference
+    release-service-e2e-tests/secure-push-oci: external reference
+    release-service-e2e-tests/fail-if-any-step-failed: external reference
+    collect-and-upload-coverage/task: runs after the pipeline
+    store-pipeline-status/task: runs after the pipeline
+    deprovision-kind-cluster/task: runs after the pipeline
+    pull-request-status-message/task: runs after the pipeline

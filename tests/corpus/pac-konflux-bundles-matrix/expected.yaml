@@ -1,0 +1,74 @@
+source: .tekton/build-service-pull-request.yaml
+pac: true
+steps:
+  init/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  clone-repository/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  prefetch-dependencies/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  build-images/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+    matrix: true
+  build-image-index/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  build-source-image/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  deprecated-base-image-check/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  roxctl-scan/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+    matrix: true
+  ecosystem-cert-preflight-checks/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+    matrix: true
+  sast-snyk-check/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  sast-shell-check/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  sast-unicode-check/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  clamav-scan/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+    matrix: true
+  apply-tags/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  push-dockerfile/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+  rpms-signature-scan/task:
+    reference: true
+    note: bundles resolver reference, contents not read
+scope:
+  local: []
+  cluster:
+    init/task: external reference
+    clone-repository/task: external reference
+    prefetch-dependencies/task: external reference
+    build-images/task: external reference
+    build-image-index/task: external reference
+    build-source-image/task: external reference
+    deprecated-base-image-check/task: external reference
+    roxctl-scan/task: external reference
+    ecosystem-cert-preflight-checks/task: external reference
+    sast-snyk-check/task: external reference
+    sast-shell-check/task: external reference
+    sast-unicode-check/task: external reference
+    clamav-scan/task: external reference
+    apply-tags/task: external reference
+    push-dockerfile/task: external reference
+    rpms-signature-scan/task: external reference

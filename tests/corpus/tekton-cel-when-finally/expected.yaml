@@ -1,0 +1,48 @@
+source: examples/v1/pipelineruns/alpha/pipelinerun-with-cel-when-expressions.yaml
+pac: false
+steps:
+  create-file/write-new-stuff:
+    image: mirror.gcr.io/ubuntu
+  check-file/check-file:
+    image: mirror.gcr.io/alpine
+  echo-file-exists/echo:
+    image: mirror.gcr.io/ubuntu
+  task-should-be-skipped-1/echo:
+    image: mirror.gcr.io/ubuntu
+  task-should-be-skipped-2/echo:
+    image: mirror.gcr.io/ubuntu
+  task-should-be-skipped-3/echo:
+    image: mirror.gcr.io/ubuntu
+  finally-task-should-be-skipped-1/echo:
+    image: mirror.gcr.io/ubuntu
+    finally: true
+  finally-task-should-be-skipped-2/echo:
+    image: mirror.gcr.io/ubuntu
+    finally: true
+  finally-task-should-be-skipped-3/echo:
+    image: mirror.gcr.io/ubuntu
+    finally: true
+  finally-task-should-be-skipped-4/echo:
+    image: mirror.gcr.io/ubuntu
+    finally: true
+  finally-task-should-be-skipped-5/echo:
+    image: mirror.gcr.io/ubuntu
+    finally: true
+  finally-task-should-be-executed/echo:
+    image: mirror.gcr.io/ubuntu
+    finally: true
+scope:
+  local:
+  - create-file/write-new-stuff
+  - check-file/check-file
+  - echo-file-exists/echo
+  - task-should-be-skipped-1/echo
+  - task-should-be-skipped-2/echo
+  - task-should-be-skipped-3/echo
+  cluster:
+    finally-task-should-be-skipped-1/echo: runs after the pipeline
+    finally-task-should-be-skipped-2/echo: runs after the pipeline
+    finally-task-should-be-skipped-3/echo: runs after the pipeline
+    finally-task-should-be-skipped-4/echo: runs after the pipeline
+    finally-task-should-be-skipped-5/echo: runs after the pipeline
+    finally-task-should-be-executed/echo: runs after the pipeline

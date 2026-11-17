@@ -1,0 +1,2 @@
+source: examples/v1/pipelineruns/no-ci/hub-resolver.yaml
+error: "remote pipelineRef is not supported \\(hub resolver reference"

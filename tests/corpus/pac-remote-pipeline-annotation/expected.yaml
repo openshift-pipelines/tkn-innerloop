@@ -1,0 +1,2 @@
+source: .tekton/boussole.yaml
+error: "pipelineRef boussole: no Pipeline named boussole in the repository; a Pipelines-as-Code annotation may fetch it"

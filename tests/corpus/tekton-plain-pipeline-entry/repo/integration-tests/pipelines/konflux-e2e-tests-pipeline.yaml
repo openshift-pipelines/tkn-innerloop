@@ -1,0 +1,477 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: konflux-e2e-tests-pipeline
+spec:
+  description: |-
+    This pipeline runs release-service e2e tests on an ephemeral Kind cluster.
+    It provisions the cluster on AWS, deploys Konflux, runs the Ginkgo test suite
+    from the e2e-tests/ directory, collects artifacts, and deprovisions the cluster.
+  params:
+    - name: SNAPSHOT
+      description: 'The JSON string representing the snapshot of the application under test.'
+      default: '{"components": [{"name":"test-app", "containerImage": "quay.io/example/repo:latest"}]}'
+      type: string
+    - name: test-name
+      description: 'The name of the test corresponding to a defined Konflux integration test.'
+      default: ''
+    - name: ocp-version
+      description: 'The OpenShift version to use for the ephemeral cluster deployment.'
+      type: string
+    - name: test-event-type
+      description: 'Indicates if the test is triggered by a Pull Request or Push event.'
+      default: 'none'
+    - name: konflux-test-infra-secret
+      description: The name of secret where testing infrastructures credentials are stored.
+      type: string
+    - name: replicas
+      description: 'The number of replicas for the cluster nodes.'
+      type: string
+    - name: machine-type
+      description: 'The type of machine to use for the cluster nodes.'
+      type: string
+    - name: oci-container-repo
+      default: 'quay.io/konflux-test-storage/konflux-team/release-service'
+      description: The ORAS container used to store all test artifacts.
+    - name: component-image
+      default: 'none'
+      description: 'Container image built from any konflux git repo.'
+    - name: artifact-browser-url
+      description: "URL to the artifact browser deployment. If provided, a link will be added to PR comments."
+      default: ""
+      type: string
+    - name: konflux-ready-timeout
+      description: Timeout for waiting on the Konflux CR Ready condition.
+      type: string
+      default: 30m
+    - name: konflux-cr-configmap
+      description: >-
+        ConfigMap in the pipeline namespace containing the Konflux CR to apply.
+      type: string
+      default: konflux-deploy-cr
+
+  tasks:
+    # ──────────────────────────────────────────────────────────────────────────
+    # Pre-flight: decide whether to run e2e
+    # ──────────────────────────────────────────────────────────────────────────
+    - name: check-if-e2e-irrelevant
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/check-if-e2e-irrelevant/0.1/check-if-e2e-irrelevant.yaml
+
+    - name: test-metadata
+      when:
+        - input: "$(tasks.check-if-e2e-irrelevant.results.result)"
+          operator: in
+          values: ["false"]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/test-metadata/0.4/test-metadata.yaml
+      params:
+        - name: SNAPSHOT
+          value: $(params.SNAPSHOT)
+        - name: test-name
+          value: $(context.pipelineRun.name)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Infrastructure: provision cluster and deploy Konflux
+    # ──────────────────────────────────────────────────────────────────────────
+    - name: provision-kind-cluster
+      runAfter:
+        - test-metadata
+      when:
+        - input: "$(tasks.check-if-e2e-irrelevant.results.result)"
+          operator: in
+          values: ["false"]
+        - input: "$(tasks.test-metadata.results.pull-request-author)"
+          operator: notin
+          values: ["red-hat-konflux[bot]"]
+        - input: "$(tasks.test-metadata.results.component-name)"
+          operator: in
+          values: ["release-service"]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/mapt-oci/kind-aws-spot/provision/0.2/kind-aws-provision.yaml
+      params:
+        - name: secret-aws-credentials
+          value: mapt-kind-secret
+        - name: cluster-access-secret-name
+          value: kfg-$(context.pipelineRun.name)
+        - name: id
+          value: $(context.pipelineRun.name)
+        - name: tags
+          value: 'owner=konflux-devprod@redhat.com,project=Konflux,created-by=integration-pipeline,component=release-service'
+        - name: debug
+          value: 'false'
+        - name: ownerKind
+          value: PipelineRun
+        - name: ownerName
+          value: $(context.pipelineRun.name)
+        - name: ownerUid
+          value: $(context.pipelineRun.uid)
+        - name: oci-ref
+          value: $(params.oci-container-repo):$(context.pipelineRun.name)
+        - name: credentials-secret-name
+          value: $(params.konflux-test-infra-secret)
+        - name: spot-increase-rate
+          value: 80
+
+    - name: deploy-konflux
+      runAfter:
+        - provision-kind-cluster
+      when:
+        - input: "$(tasks.check-if-e2e-irrelevant.results.result)"
+          operator: in
+          values: ["false"]
+        - input: "$(tasks.test-metadata.results.pull-request-author)"
+          operator: notin
+          values: ["red-hat-konflux[bot]"]
+        - input: "$(tasks.test-metadata.results.component-name)"
+          operator: in
+          values: ["release-service"]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/konflux-ci.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: .tekton/tasks/deploy-konflux/task.yaml
+      params:
+        - name: cluster-access-secret
+          value: kfg-$(context.pipelineRun.name)
+        - name: git-url
+          value: https://github.com/konflux-ci/konflux-ci.git
+        - name: revision
+          value: main
+        - name: konflux-ready-timeout
+          value: $(params.konflux-ready-timeout)
+        - name: konflux-cr-configmap
+          value: $(params.konflux-cr-configmap)
+        - name: konflux-cr-configmap-key
+          value: konflux-cr.yaml
+        - name: oci-container-repo
+          value: $(params.oci-container-repo)
+        - name: oci-container-repo-credentials-secret
+          value: $(params.konflux-test-infra-secret)
+        - name: pipeline-run-name
+          value: $(context.pipelineRun.name)
+        - name: overrides-yaml
+          value: |
+            - name: release
+              git:
+                - sourceRepo: konflux-ci/release-service
+                  remote:
+                    repo: "$(tasks.test-metadata.results.git-url)"
+                    ref: "$(tasks.test-metadata.results.git-revision)"
+              images:
+                - orig: quay.io/konflux-ci/release-service
+                  replacement: "$(tasks.test-metadata.results.instrumented-container-repo):$(tasks.test-metadata.results.instrumented-container-tag)"
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # E2E tests: clone release-service repo and run Ginkgo suite
+    # ──────────────────────────────────────────────────────────────────────────
+    - name: release-service-e2e-tests
+      timeout: 3h
+      runAfter:
+        - deploy-konflux
+      when:
+        - input: "$(tasks.check-if-e2e-irrelevant.results.result)"
+          operator: in
+          values: ["false"]
+        - input: "$(tasks.test-metadata.results.pull-request-author)"
+          operator: notin
+          values: ["red-hat-konflux[bot]"]
+        - input: "$(tasks.test-metadata.results.component-name)"
+          operator: in
+          values: ["release-service"]
+      params:
+        - name: git-url
+          value: "$(tasks.test-metadata.results.git-url)"
+        - name: git-revision
+          value: "$(tasks.test-metadata.results.git-revision)"
+        - name: oras-container
+          value: "$(params.oci-container-repo):$(context.pipelineRun.name)"
+        - name: cluster-access-secret-name
+          value: kfg-$(context.pipelineRun.name)
+      taskSpec:
+        params:
+          - name: git-url
+            type: string
+          - name: git-revision
+            type: string
+          - name: oras-container
+            type: string
+          - name: cluster-access-secret-name
+            type: string
+        volumes:
+          - name: konflux-ci-secrets-volume
+            secret:
+              secretName: konflux-e2e-secrets
+          - name: konflux-infra-secrets-volume
+            secret:
+              secretName: konflux-test-infra
+          - name: cluster-secret-volume
+            secret:
+              optional: true
+              secretName: $(params.cluster-access-secret-name)
+        steps:
+          - name: e2e-test
+            image: registry.access.redhat.com/ubi9/go-toolset:9.7-1768393489
+            securityContext:
+              runAsUser: 0
+            volumeMounts:
+              - name: konflux-ci-secrets-volume
+                mountPath: /usr/local/konflux-ci-secrets
+              - name: konflux-infra-secrets-volume
+                mountPath: /usr/local/konflux-test-infra
+              - name: cluster-secret-volume
+                mountPath: /tmp/kubeconfig
+                subPath: kubeconfig
+            env:
+              - name: KUBECONFIG
+                value: /tmp/kubeconfig
+              - name: GOTOOLCHAIN
+                value: auto
+              - name: GOMAXPROCS
+                value: "4"
+              - name: ARTIFACT_DIR
+                value: /tmp/artifact-dir
+              - name: GIT_URL
+                value: $(params.git-url)
+              - name: GIT_REVISION
+                value: $(params.git-revision)
+              - name: E2E_TIMEOUT
+                value: "45m"
+            onError: continue
+            script: |
+              #!/bin/bash
+              set -euo pipefail
+
+              # Load and decode secrets (stored as base64 in konflux-e2e-secrets)
+              SECRETS="/usr/local/konflux-ci-secrets"
+              export QUAY_TOKEN="$(base64 -d < "${SECRETS}/quay-token")"
+              export RELEASE_CATALOG_TA_QUAY_TOKEN="$(base64 -d < "${SECRETS}/release-catalog-ta-quay-token")"
+
+              # Point the retry pipeline git resolver at this PR's repo and commit
+              export RELEASE_SERVICE_OPERATOR_URL="${GIT_URL}"
+              export RELEASE_SERVICE_OPERATOR_REVISION="${GIT_REVISION}"
+
+              # Set up a clean working directory
+              WORK_DIR="$(mktemp -d)"
+              export GOPATH="${WORK_DIR}/go"
+              export GOCACHE="${WORK_DIR}/cache"
+              mkdir -p "${ARTIFACT_DIR}" "${GOPATH}" "${GOCACHE}"
+
+              # Clone and checkout the release-service repo at the PR revision
+              git clone "${GIT_URL}" "${WORK_DIR}/release-service"
+              cd "${WORK_DIR}/release-service"
+              git checkout "${GIT_REVISION}"
+
+              # Prepare Go toolchain and Ginkgo
+              go mod download
+              go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
+              export PATH="${GOPATH}/bin:${PATH}"
+
+              # Run the release-service e2e test suite
+              cd e2e-tests
+              ginkgo -v \
+                --no-color \
+                --output-interceptor-mode=none \
+                --fail-on-empty \
+                --timeout="${E2E_TIMEOUT}" \
+                --output-dir="${ARTIFACT_DIR}" \
+                --junit-report=e2e-report.xml \
+                --label-filter="release-service" \
+                ./cmd
+          - name: secure-push-oci
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/tekton-integration-catalog.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/secure-push-oci/0.1/secure-push-oci.yaml
+            params:
+              - name: workdir-path
+                value: /tmp/artifact-dir
+              - name: oci-ref
+                value: $(params.oras-container)
+              - name: credentials-volume-name
+                value: konflux-infra-secrets-volume
+          - name: fail-if-any-step-failed
+            ref:
+              resolver: git
+              params:
+                - name: url
+                  value: https://github.com/konflux-ci/tekton-integration-catalog.git
+                - name: revision
+                  value: main
+                - name: pathInRepo
+                  value: stepactions/fail-if-any-step-failed/0.1/fail-if-any-step-failed.yaml
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Finally: coverage, status, deprovision, PR comment
+  # ────────────────────────────────────────────────────────────────────────────
+  finally:
+    - name: collect-and-upload-coverage
+      when:
+        - input: $(tasks.release-service-e2e-tests.status)
+          operator: in
+          values:
+            - Succeeded
+            - Failed
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/coverport-coverage/0.1/coverport-coverage.yaml
+      params:
+        - name: instrumented-images
+          value: "$(tasks.test-metadata.results.instrumented-container-repo):$(tasks.test-metadata.results.instrumented-container-tag)"
+        - name: cluster-access-secret-name
+          value: kfg-$(context.pipelineRun.name)
+        - name: test-name
+          value: e2e-tests
+        - name: oci-container
+          value: "$(params.oci-container-repo):$(context.pipelineRun.name)-coverport"
+        - name: codecov-flags
+          value: e2e-tests
+        - name: credentials-secret-name
+          value: "release-service-coverport-secrets"
+
+    - name: store-pipeline-status
+      when:
+        - input: "$(tasks.check-if-e2e-irrelevant.results.result)"
+          operator: in
+          values: ["false"]
+        - input: "$(tasks.test-metadata.results.pull-request-author)"
+          operator: notin
+          values: ["red-hat-konflux[bot]"]
+        - input: "$(tasks.test-metadata.results.component-name)"
+          operator: in
+          values: ["release-service"]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/store-pipeline-status/0.1/store-pipeline-status.yaml
+      params:
+        - name: oci-ref
+          value: "$(params.oci-container-repo):$(context.pipelineRun.name)"
+        - name: credentials-secret-name
+          value: "$(params.konflux-test-infra-secret)"
+        - name: pipelinerun-name
+          value: $(context.pipelineRun.name)
+        - name: pipeline-aggregate-status
+          value: $(tasks.status)
+
+    - name: deprovision-kind-cluster
+      when:
+        - input: "$(tasks.check-if-e2e-irrelevant.results.result)"
+          operator: in
+          values: ["false"]
+        - input: "$(tasks.test-metadata.results.pull-request-author)"
+          operator: notin
+          values: ["red-hat-konflux[bot]"]
+        - input: "$(tasks.test-metadata.results.component-name)"
+          operator: in
+          values: ["release-service"]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/mapt-oci/kind-aws-spot/deprovision/0.1/kind-aws-deprovision.yaml
+      params:
+        - name: secret-aws-credentials
+          value: mapt-kind-secret
+        - name: id
+          value: $(context.pipelineRun.name)
+        - name: cluster-access-secret
+          value: kfg-$(context.pipelineRun.name)
+        - name: oci-container
+          value: $(params.oci-container-repo):$(context.pipelineRun.name)
+        - name: oci-credentials
+          value: konflux-test-infra
+
+    - name: pull-request-status-message
+      when:
+        - input: "$(tasks.check-if-e2e-irrelevant.results.result)"
+          operator: in
+          values: ["false"]
+        - input: "$(tasks.test-metadata.results.pull-request-author)"
+          operator: notin
+          values: ["red-hat-konflux[bot]"]
+        - input: "$(tasks.test-metadata.results.component-name)"
+          operator: in
+          values: ["release-service"]
+      taskRef:
+        resolver: git
+        params:
+          - name: url
+            value: https://github.com/konflux-ci/tekton-integration-catalog.git
+          - name: revision
+            value: main
+          - name: pathInRepo
+            value: tasks/pull-request-comment/0.1/pull-request-comment.yaml
+      params:
+        - name: test-name
+          value: "$(context.pipelineRun.name)"
+        - name: oci-container
+          value: "$(params.oci-container-repo):$(context.pipelineRun.name)"
+        - name: pipeline-aggregate-status
+          value: "$(tasks.status)"
+        - name: pull-request-author
+          value: "$(tasks.test-metadata.results.pull-request-author)"
+        - name: pull-request-number
+          value: "$(tasks.test-metadata.results.pull-request-number)"
+        - name: git-repo
+          value: "$(tasks.test-metadata.results.git-repo)"
+        - name: git-org
+          value: "$(tasks.test-metadata.results.git-org)"
+        - name: git-revision
+          value: "$(tasks.test-metadata.results.git-revision)"
+        - name: junit-report-name
+          value: e2e-report.xml
+        - name: e2e-log-name
+          value: e2e-tests.log
+        - name: cluster-provision-log-name
+          value: kind-aws-provision.log
+        - name: enable-test-results-analysis
+          value: "true"
+        - name: artifact-browser-url
+          value: $(params.artifact-browser-url)

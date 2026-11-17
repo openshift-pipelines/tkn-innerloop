@@ -1,0 +1,12 @@
+source: examples/v1/pipelineruns/mapping-workspaces.yaml
+pac: false
+steps:
+  fetch-the-recipe/fetch-and-write:
+    image: mirror.gcr.io/ubuntu
+  print-the-recipe/print-secrets:
+    image: mirror.gcr.io/ubuntu
+scope:
+  local:
+  - fetch-the-recipe/fetch-and-write
+  - print-the-recipe/print-secrets
+  cluster: {}

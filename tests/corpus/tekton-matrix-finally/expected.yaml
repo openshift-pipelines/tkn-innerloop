@@ -1,0 +1,20 @@
+source: examples/v1/pipelineruns/beta/ignore-task-error.yaml
+pac: false
+steps:
+  echo-continue/write:
+    image: mirror.gcr.io/alpine
+  echo-continue-with-matrix/write:
+    image: mirror.gcr.io/alpine
+    matrix: true
+  echo/write:
+    image: mirror.gcr.io/alpine
+  verify-task-reason/verify-task-reason:
+    image: mirror.gcr.io/alpine
+    finally: true
+scope:
+  local:
+  - echo-continue/write
+  - echo-continue-with-matrix/write
+  - echo/write
+  cluster:
+    verify-task-reason/verify-task-reason: runs after the pipeline

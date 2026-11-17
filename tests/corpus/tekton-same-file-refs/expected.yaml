@@ -1,0 +1,12 @@
+source: examples/v1/pipelineruns/4808-regression.yaml
+pac: false
+steps:
+  generate-result/gen-result:
+    image: mirror.gcr.io/bash
+  print-result/print-result:
+    image: mirror.gcr.io/bash
+scope:
+  local:
+  - generate-result/gen-result
+  - print-result/print-result
+  cluster: {}

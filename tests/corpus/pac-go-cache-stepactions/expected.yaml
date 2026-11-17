@@ -1,0 +1,24 @@
+source: .tekton/go.yaml
+pac: true
+steps:
+  go/fetch-repo:
+    reference: true
+    note: hub resolver reference, contents not read
+  go/cache-fetch:
+    reference: true
+    note: http resolver reference, contents not read
+  go/unittest:
+    image: docker.io/golang:1.27
+  go/lint:
+    image: docker.io/golangci/golangci-lint:v2.15.0
+  go/cache-upload:
+    reference: true
+    note: http resolver reference, contents not read
+scope:
+  local:
+  - go/unittest
+  - go/lint
+  cluster:
+    go/fetch-repo: external reference
+    go/cache-fetch: external reference
+    go/cache-upload: external reference

@@ -1,0 +1,10 @@
+source: examples/v1/pipelineruns/beta/git-resolver.yaml
+pac: false
+steps:
+  task1/task:
+    reference: true
+    note: git resolver reference, contents not read
+scope:
+  local: []
+  cluster:
+    task1/task: external reference
