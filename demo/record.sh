@@ -15,17 +15,17 @@ vhs demo/demo.tape
 # Drop files the demo wrote into the target repository.
 rm -f "$PAC_REPO/pkg/params/innerloop_demo_test.go" "$PAC_REPO/bin/release.yaml"
 
-# Soundtrack, generated to the exact length of the recording.
+# Jazz backing track, generated to the exact length of the recording.
 DURATION=$(ffprobe -v error -show_entries format=duration \
   -of default=noprint_wrappers=1:nokey=1 demo/tkn-innerloop-demo.mp4)
-python3 demo/generate_elevator_music.py "$DURATION" demo/elevator-music.wav
+python3 demo/generate_jazz.py "$DURATION" demo/jazz-backing.wav
 
 ffmpeg -y -loglevel error \
   -i demo/tkn-innerloop-demo.mp4 \
-  -i demo/elevator-music.wav \
+  -i demo/jazz-backing.wav \
   -c:v copy -c:a aac -b:a 192k -shortest \
-  demo/tkn-innerloop-demo-music.mp4
-mv demo/tkn-innerloop-demo-music.mp4 demo/tkn-innerloop-demo.mp4
-rm -f demo/elevator-music.wav
+  demo/tkn-innerloop-demo-sound.mp4
+mv demo/tkn-innerloop-demo-sound.mp4 demo/tkn-innerloop-demo.mp4
+rm -f demo/jazz-backing.wav
 
 echo "Rebuilt $REPO_ROOT/demo/tkn-innerloop-demo.mp4 (${DURATION}s)"
