@@ -46,3 +46,11 @@ scope:
     finally-task-should-be-skipped-4/echo: runs after the pipeline
     finally-task-should-be-skipped-5/echo: runs after the pipeline
     finally-task-should-be-executed/echo: runs after the pipeline
+
+plan:
+  run: [create-file/write-new-stuff, check-file/check-file]
+  not_run:
+    - task-should-be-skipped-1/echo
+    - task-should-be-skipped-2/echo
+    - task-should-be-skipped-3/echo
+execute: {}

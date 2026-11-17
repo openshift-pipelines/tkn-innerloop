@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Generate plans for the corpus with a real model, check them, and optionally run them.
+
+Each case is checked out from its source repository at the commit in SOURCES.md, so
+the model sees the same Makefiles and helpers as in the original repository.
+"""
+
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+import yaml
+
+HERE = Path(__file__).resolve().parent
+CORPUS = HERE / "corpus"
+CLI = HERE.parent / "bin" / "tkn-innerloop"
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "tkn-innerloop" / "corpus"
+SOURCE_ROW = re.compile(r"^\| (\S+) \| \[[^\]]+\]\(https://github\.com/([^/]+/[^/]+)/tree/([0-9a-f]{40})\)")
+STEP_RESULT = re.compile(r"^\s*(?:✓ (\S+) passed|✗ (\S+) (?:failed \(exit|timed out))")
+FETCH_LOCK = threading.Lock()
+
+
+def sources() -> dict[str, tuple[str, str]]:
+    rows = {}
+    for line in (CORPUS / "SOURCES.md").read_text().splitlines():
+        if match := SOURCE_ROW.match(line):
+            rows[match[1]] = (match[2], match[3])
+    return rows
+
+
+def git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "user.name=corpus", "-c", "user.email=corpus@example.invalid",
+         "-c", "commit.gpgsign=false", *args],
+        cwd=cwd, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+def checkout(repo: str, commit: str, dest: Path) -> None:
+    """A worktree of repo at commit, fetched once into a shared partial clone."""
+    store = CACHE / repo.replace("/", "__")
+    with FETCH_LOCK:
+        if not (store / ".git").exists():
+            store.mkdir(parents=True, exist_ok=True)
+            git(store, "init", "-q")
+            git(store, "remote", "add", "origin", f"https://github.com/{repo}")
+        try:
+            git(store, "cat-file", "-e", f"{commit}^{{commit}}")
+        except subprocess.CalledProcessError:
+            git(store, "fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", commit)
+        git(store, "worktree", "add", "-q", "--detach", str(dest), commit)
+
+
+def cli(*args: str, cwd: Path, log: Path, timeout: float) -> int:
+    env = {**os.environ, "NO_COLOR": "1"}
+    with log.open("w") as out:
+        try:
+            return subprocess.run(
+                [sys.executable, str(CLI), *args], cwd=cwd, env=env,
+                stdout=out, stderr=subprocess.STDOUT, timeout=timeout, check=False,
+            ).returncode
+        except subprocess.TimeoutExpired:
+            out.write(f"\ncorpus-check: timed out after {timeout:g}s\n")
+            return 124
+
+
+def check_plan(plan: dict, expected: dict) -> list[str]:
+    """Problems with a valid plan against the case's `plan` expectations."""
+    steps = {step["id"]: step for step in plan["steps"]}
+    problems = []
+    for key in expected.get("run", []):
+        if steps[key]["decision"] != "run":
+            problems.append(f"{key} should run, plan says {steps[key]['decision']}")
+    for key in expected.get("not_run", []):
+        if steps[key]["decision"] == "run":
+            problems.append(f"{key} must not run")
+    for key, texts in expected.get("contains", {}).items():
+        if steps[key]["decision"] == "run":
+            problems += [
+                f"{key} script lacks {text!r}" for text in texts if text not in steps[key]["script"]
+            ]
+    for key, needed in expected.get("depends_on", {}).items():
+        if steps[key]["decision"] == "run":
+            problems += [
+                f"{key} should depend on {dep}"
+                for dep in needed if dep not in steps[key]["depends_on"]
+            ]
+    return problems
+
+
+def run_steps(plan_file: Path, root: Path, ids: list[str], commit: str, args, log: Path, timeout: int):
+    forwarded = [name for name in sorted(env_names(plan_file, ids)) if name in os.environ]
+    command = [
+        "run", str(plan_file), "--repo", str(root), "--steps", ",".join(ids),
+        "--base", commit, "--runtime", args.runtime, "--timeout", str(timeout),
+        *[item for name in forwarded for item in ("--env", name)],
+    ]
+    code = cli(*command, cwd=root, log=log, timeout=timeout * len(ids) + 600)
+    passed, failed = set(), set()
+    for line in log.read_text().splitlines():
+        if match := STEP_RESULT.match(line):
+            (passed if match[1] else failed).add(match[1] or match[2])
+    return code, passed, failed
+
+
+def env_names(plan_file: Path, ids: list[str]) -> set[str]:
+    plan = json.loads(plan_file.read_text())
+    return {
+        name
+        for step in plan["steps"] if step["id"] in ids
+        for name in (*step.get("required_env", []), *step.get("optional_env", []))
+    }
+
+
+def execute(expected: dict, plan_file: Path, root: Path, commit: str, args, out: Path) -> dict:
+    spec = expected["execute"] or {}
+    plan = json.loads(plan_file.read_text())
+    decided = {s["id"]: s for s in plan["steps"] if s["decision"] == "run"}
+    wanted = spec.get("steps") or list(decided)
+    ids = [key for key in wanted if key in decided]
+    missing = sorted(
+        name for key in ids for name in decided[key]["required_env"] if name not in os.environ
+    )
+    result = {"steps": ids, "not_planned": [k for k in wanted if k not in decided], "breaks": []}
+    if missing:
+        result["blocked"] = f"needs {', '.join(missing)}"
+        return result
+    if not ids:
+        result["blocked"] = "the plan runs none of these steps"
+        return result
+    timeout = spec.get("timeout", args.step_timeout)
+    code, _, failed = run_steps(plan_file, root, ids, commit, args, out / "run-clean.log", timeout)
+    result["clean"] = {"exit": code, "failed": sorted(failed), "ok": code == 0 and not failed}
+    for index, planted in enumerate(spec.get("breaks", []), 1):
+        targets = [key for key in planted["fail"] if key in ids]
+        entry = {"name": planted["name"]}
+        if not targets:
+            entry["skipped"] = "plan does not run the step it targets"
+            result["breaks"].append(entry)
+            continue
+        for path, text in planted.get("files", {}).items():
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+        git(root, "add", "--", *planted.get("files", {}))
+        git(root, "commit", "-q", "-m", f"corpus-check: {planted['name']}")
+        code, _, failed = run_steps(
+            plan_file, root, ids, commit, args, out / f"run-break-{index}.log", timeout
+        )
+        git(root, "reset", "-q", "--hard", commit)
+        git(root, "clean", "-q", "-fd")
+        entry |= {"exit": code, "failed": sorted(failed), "ok": code == 1 and failed == set(targets)}
+        result["breaks"].append(entry)
+    return result
+
+
+def remove_worktree(repo: str, root: Path) -> None:
+    subprocess.run(["git", "worktree", "remove", "--force", str(root)],
+                   cwd=CACHE / repo.replace("/", "__"), capture_output=True, check=False)
+
+
+def check_case(case: Path, origin: tuple[str, str], args, out: Path) -> dict:
+    expected = yaml.safe_load((case / "expected.yaml").read_text())
+    scope = expected["scope"]["local"]
+    out.mkdir(parents=True)
+    root = out / "worktree"
+    repo, commit = origin
+    checkout(repo, commit, root)
+    report = {"case": case.name, "runs": []}
+    for run in range(1, args.runs + 1):
+        plan_file = out / f"plan-{run}.json"
+        start = time.monotonic()
+        code = cli(
+            "generate", expected["source"], "-o", str(plan_file), "--model", args.model,
+            "--steps", ",".join(scope), "--timeout", str(args.convert_timeout),
+            cwd=root, log=out / f"generate-{run}.log", timeout=args.convert_timeout * 4,
+        )
+        entry = {"seconds": round(time.monotonic() - start, 1), "valid": code == 0}
+        if code == 0:
+            plan = json.loads(plan_file.read_text())
+            entry["decisions"] = {s["id"]: s["decision"] for s in plan["steps"] if s["id"] in scope}
+            entry["problems"] = check_plan(plan, expected.get("plan", {}))
+        else:
+            tail = (out / f"generate-{run}.log").read_text().strip().splitlines()[-1:]
+            entry["problems"] = [f"generate failed: {' '.join(tail)}"]
+        report["runs"].append(entry)
+    return report
+
+
+def summary(reports: list[dict]) -> bool:
+    ok = True
+    for report in reports:
+        runs = report["runs"]
+        good = sum(r["valid"] and not r["problems"] for r in runs)
+        line = f"{report['case']:34} plans {good}/{len(runs)}"
+        problems = sorted({p for r in runs for p in r["problems"]})
+        ok &= good == len(runs)
+        if "execute" in report:
+            ex = report["execute"]
+            if "blocked" in ex:
+                line += f" · run blocked: {ex['blocked']}"
+                ok = False
+            else:
+                clean = ex["clean"]
+                breaks = [b for b in ex["breaks"] if "skipped" not in b]
+                caught = sum(b["ok"] for b in breaks)
+                line += f" · clean run {'pass' if clean['ok'] else 'FAIL ' + ','.join(clean['failed'])}"
+                if breaks:
+                    line += f" · breaks caught {caught}/{len(breaks)}"
+                ok &= clean["ok"] and caught == len(breaks)
+                problems += [
+                    f"break {b['name']!r}: failed {b['failed'] or 'nothing'}"
+                    for b in breaks if not b["ok"]
+                ]
+        print(line)
+        for problem in problems:
+            print(f"    {problem}")
+    return ok
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("cases", nargs="*", help="Case names (default: every case with a local scope)")
+    parser.add_argument("--model", default=os.environ.get("TKN_INNERLOOP_AI_MODEL", "haiku"))
+    parser.add_argument("--runs", type=int, default=3, help="Plans generated per case")
+    parser.add_argument("--jobs", type=int, default=4, help="Cases converted in parallel")
+    parser.add_argument("--execute", action="store_true", help="Run cases that have an execute block")
+    parser.add_argument("--runtime", default="auto")
+    parser.add_argument("--convert-timeout", type=int, default=300)
+    parser.add_argument("--step-timeout", type=int, default=600)
+    parser.add_argument("--out", help="Report directory (default: tmp/corpus-runs/<time>)")
+    args = parser.parse_args()
+
+    origins = sources()
+    cases = []
+    for path in sorted(CORPUS.glob("*/expected.yaml")):
+        expected = yaml.safe_load(path.read_text())
+        name = path.parent.name
+        if args.cases and name not in args.cases:
+            continue
+        if expected.get("error") or not expected["scope"]["local"]:
+            continue
+        cases.append(path.parent)
+    unknown = set(args.cases) - {c.name for c in cases}
+    if unknown:
+        parser.error(f"no runnable case named {', '.join(sorted(unknown))}")
+    model = re.sub(r"[^A-Za-z0-9.-]+", "-", args.model)
+    out = Path(args.out or HERE.parent / "tmp" / "corpus-runs" / f"{time.strftime('%Y%m%d-%H%M%S')}-{model}").resolve()
+    print(f"{len(cases)} cases · {args.runs} plans each · {args.model} · {out}", flush=True)
+    os.environ["XDG_CACHE_HOME"] = str(out / "cache")
+
+    # Conversion runs in parallel; execution is serialised so container runs do not compete.
+    def convert(case: Path) -> dict:
+        report = check_case(case, origins[case.name], args, out / case.name)
+        print(f"  converted {case.name}", flush=True)
+        return report
+
+    with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
+        reports = list(pool.map(convert, cases))
+    if args.execute:
+        for report in reports:
+            case = CORPUS / report["case"]
+            expected = yaml.safe_load((case / "expected.yaml").read_text())
+            # Prefer a plan that met its expectations; otherwise run what the model produced.
+            valid = sorted(
+                (i for i, r in enumerate(report["runs"], 1) if r["valid"]),
+                key=lambda i: bool(report["runs"][i - 1]["problems"]),
+            )
+            if "execute" not in expected or not valid:
+                continue
+            print(f"  running {case.name}", flush=True)
+            report["execute"] = execute(
+                expected, out / case.name / f"plan-{valid[0]}.json",
+                out / case.name / "worktree", origins[case.name][1], args, out / case.name,
+            )
+    # Kept until now: a plan can depend on files conversion wrote, such as tkn pac resolve output.
+    for case in cases:
+        remove_worktree(origins[case.name][0], out / case.name / "worktree")
+    (out / "report.json").write_text(json.dumps(reports, indent=2) + "\n")
+    print()
+    return 0 if summary(reports) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

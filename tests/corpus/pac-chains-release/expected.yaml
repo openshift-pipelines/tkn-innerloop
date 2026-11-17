@@ -67,3 +67,6 @@ scope:
     publish-to-bucket/task: external reference
     publish-to-bucket-latest/task: external reference
     create-draft-release/task: external reference
+
+plan:
+  not_run: [wait-for-chains/wait-and-extract]

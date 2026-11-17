@@ -22,3 +22,21 @@ scope:
     go/fetch-repo: external reference
     go/cache-fetch: external reference
     go/cache-upload: external reference
+
+plan:
+  run: [go/unittest, go/lint]
+execute:
+  steps: [go/unittest]
+  timeout: 3600
+  breaks:
+    - name: failing Go test
+      files:
+        pkg/corpusbreak/break_test.go: |
+          package corpusbreak
+
+          import "testing"
+
+          func TestPlantedFailure(t *testing.T) {
+          	t.Fatal("planted failure")
+          }
+      fail: [go/unittest]

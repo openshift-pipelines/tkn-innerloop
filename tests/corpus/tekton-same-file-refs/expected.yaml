@@ -10,3 +10,9 @@ scope:
   - generate-result/gen-result
   - print-result/print-result
   cluster: {}
+
+plan:
+  run: [generate-result/gen-result, print-result/print-result]
+  depends_on:
+    print-result/print-result: [generate-result/gen-result]
+execute: {}

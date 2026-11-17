@@ -18,3 +18,9 @@ scope:
   - echo/write
   cluster:
     verify-task-reason/verify-task-reason: runs after the pipeline
+
+plan:
+  run: [echo/write]
+  contains:
+    echo-continue-with-matrix/write: [foo, bar]
+execute: {}

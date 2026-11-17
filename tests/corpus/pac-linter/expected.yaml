@@ -50,3 +50,46 @@ scope:
   - linters/goreleaser-check
   cluster:
     linters/fetch-repo: external reference
+
+plan:
+  run:
+    - linters/codespell
+    - linters/shellcheck
+    - linters/check-test-conventions
+    - linters/yamllint
+  contains:
+    linters/check-test-conventions: [$BASE_SHA]
+execute:
+  steps:
+    - linters/codespell
+    - linters/shellcheck
+    - linters/check-test-conventions
+    - linters/yamllint
+  breaks:
+    - name: spelling mistake in the docs
+      files:
+        docs/content/docs/corpus-break.md: |
+          This page has a mispelled word.
+      fail: [linters/codespell]
+    - name: unchecked cd in a hack script
+      files:
+        hack/corpus-break.sh: |
+          #!/usr/bin/env bash
+          cd "$1"
+          ls
+      fail: [linters/shellcheck]
+    - name: test name with an underscore
+      files:
+        pkg/corpusbreak/break_test.go: |
+          package corpusbreak
+
+          import "testing"
+
+          func TestPlanted_Failure(t *testing.T) {}
+      fail: [linters/check-test-conventions]
+    - name: duplicate YAML key
+      files:
+        corpus-break.yaml: |
+          name: one
+          name: two
+      fail: [linters/yamllint]

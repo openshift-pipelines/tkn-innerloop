@@ -51,3 +51,6 @@ scope:
     store-pipeline-status/task: runs after the pipeline
     deprovision-kind-cluster/task: runs after the pipeline
     pull-request-status-message/task: runs after the pipeline
+
+plan:
+  not_run: [release-service-e2e-tests/e2e-test]

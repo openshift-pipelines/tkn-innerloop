@@ -28,3 +28,6 @@ scope:
   - clone-coverage-upload/coverage
   - clone-coverage-upload/upload
   cluster: {}
+
+plan:
+  not_run: [clone-coverage-upload/upload]

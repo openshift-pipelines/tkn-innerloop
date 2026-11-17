@@ -213,7 +213,10 @@ aniflow --check README.md poc-report.md presentation.md
 Konflux, Tekton Chains, tektoncd/pipeline examples and tektoncd/plumbing, each
 pinned to a commit. The unit tests check what inventory and the automatic scope
 return for each one, and each case's README describes the plan a good model
-should produce. `tests/corpus/README.md` explains how to add a case.
+should produce. `tests/corpus-check` asks the model for plans of each case,
+checks them against per-case expectations, and with `--execute` runs some of them
+on the source repository, then again with a planted failure that must be caught.
+`tests/corpus/README.md` explains both and how to add a case.
 
 `demo/record.sh` generates the plan during recording and checks expected command
 exit statuses. It refuses to overwrite an existing fixture, cleans up its own
