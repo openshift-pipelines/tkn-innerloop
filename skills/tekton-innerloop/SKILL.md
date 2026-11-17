@@ -1,6 +1,6 @@
 ---
 name: tekton-innerloop
-description: Convert Tekton PipelineRuns into reviewed local execution plans using repository context, then reuse those plans to validate edits in Docker or Podman without a Kubernetes cluster.
+description: Run a repository's Tekton checks locally. One command converts a PipelineRun with an agent (cached), then runs it in Podman or Docker without a Kubernetes cluster; use generate and validate to review the plan first.
 ---
 
 # Tekton inner-loop validation
@@ -9,7 +9,21 @@ Use the repository's Tekton commands to check local edits. An agent decides what
 can run locally and explains the adaptations. The CLI validates the resulting
 plan and executes it without calling a model during the edit loop.
 
-## Convert once
+## The one command
+
+```sh
+tkn-innerloop run .tekton/go.yaml            # or just `run` if .tekton/ has one pipeline
+tkn-innerloop run .tekton/linter.yaml --steps codespell,yamllint
+```
+
+`run` chooses the local scope, converts when there is no current plan, caches the
+plan in `.tekton-innerloop/` (self-ignoring), and executes it. Exit `0`: passed.
+`1`: a check failed. `2`: passed, but some steps were unresolved, so tell the user
+the result is incomplete. It does not stop for review, so read the plan first
+(`generate`, `validate --diff`, below) when the scripts matter. Run it after every
+edit and report the exit code and the failing check output.
+
+## Convert once (to review first)
 
 Inspect the source inventory. Every step starts unresolved; inspection does not
 infer that a command is safe or runnable from its name.
@@ -59,18 +73,20 @@ hashes, image provenance, exact edits, plan dependencies and shell syntax. It
 cannot establish semantic equivalence or decide whether arbitrary commands are
 safe. Generated scripts execute with write access to the worktree.
 
-Docker is the default runtime. Podman uses `--runtime podman`. Both execute the
+`--runtime auto` is the default: Podman if installed, else Docker. Both execute the
 plan inside the declared source images, pass the script over stdin, and mount
-the worktree at `/workspace`. Host mode is an explicit `--runtime host` option;
+the worktree at `/workspace`. After each Docker step the runner gives root-owned
+files back to the user; Podman already writes as the user. Host mode is an explicit `--runtime host` option;
 it executes the same scripts with local tool versions and the host environment,
 including any setup commands in those scripts.
 
-`BASE_SHA` comes from `git merge-base HEAD <base-ref>` at execution, with `main`
-as the default target. Declare any changed-file selection changes explicitly,
+`BASE_SHA` comes from `git merge-base HEAD <base>` at execution; the base is
+origin's default branch, else `main`, else `master` (`--base` overrides). Declare any changed-file selection changes explicitly,
 including coverage of staged, unstaged and untracked files. Environment values
 and working directories support literal text plus `$WORKSPACE` and `$BASE_SHA`.
-Secrets stay outside the plan: list names in `required_env` and explicitly
-forward them with `--env NAME` when needed. Do not fetch credentials automatically.
+Secrets stay outside the plan: list names in `required_env` (the run is blocked
+without them) or, when a step still works without the value, in `optional_env`,
+and forward them explicitly with `--env NAME`. Do not fetch credentials automatically.
 Environment and working-directory values do not evaluate shell commands. Put
 result-file reads and required directory creation in declared script edits.
 

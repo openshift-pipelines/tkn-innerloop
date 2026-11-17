@@ -1,8 +1,15 @@
 # Tekton checks in the local edit loop
 
 `tkn-innerloop` asks a coding agent to turn a Tekton PipelineRun into a local
-execution plan. You review the changes once, then run the saved plan in Docker
-or Podman after code edits. Kubernetes stays in CI.
+execution plan, then runs the plan in Podman or Docker after code edits.
+Kubernetes stays in CI. One command does it all:
+
+```sh
+tkn-innerloop run .tekton/go.yaml
+```
+
+The first run converts the pipeline and caches the plan; later runs reuse it with
+no agent call until the pipeline or a helper it reads changes.
 
 The agent reads repository helpers as well as YAML. It proposes exact edits to
 source scripts and explains which steps run, which are skipped, and which still
@@ -19,12 +26,32 @@ python3 -m pip install -r requirements.txt
 export PATH="$PWD/bin:$PATH"
 cd /path/to/your/repository
 
+tkn-innerloop run .tekton/go.yaml                  # convert if needed, then run
+tkn-innerloop run .tekton/linter.yaml --steps codespell,yamllint
+tkn-innerloop run                                  # when .tekton/ has one pipeline
+```
+
+`run` picks the steps itself: steps that point at an external reference
+(`git-clone`, caches), `finally` tasks, steps marked `(skip-local)` and steps that
+push, deploy or post to an API stay on the cluster. The agent decides the rest.
+`--steps` replaces that choice. The plan is cached in `.tekton-innerloop/`, a folder
+that ignores itself, so nothing in your repository changes.
+
+**`run` executes agent-edited scripts without a review stop.** To read them first:
+
+```sh
 tkn-innerloop inspect .tekton/linter.yaml
 tkn-innerloop generate .tekton/linter.yaml \
   --steps codespell,check-test-conventions -o /tmp/linters.plan.json
 tkn-innerloop validate /tmp/linters.plan.json --diff
-tkn-innerloop run /tmp/linters.plan.json --runtime docker --base origin/main
+tkn-innerloop run /tmp/linters.plan.json
 ```
+
+Model choice matters. On 10 conversions of one step (`go/unittest`), `haiku`, the
+default, was valid on the first try every time (6.5s on average). DeepSeek V4.1
+Flash through enmaas needed a retry 5 times and failed 3 times, usually from
+unescaped quotes in shell edits. Malformed answers are retried twice with the exact
+error; a step the agent leaves unresolved is never retried.
 
 The step names above are the PaC demo's scope; choose names from your pipeline.
 Use the full step ID from `inspect` when a step name is ambiguous. Files containing
@@ -85,16 +112,27 @@ invalidate the plan.
 ## Repeat a check
 
 ```sh
-tkn-innerloop run /tmp/linters.plan.json --steps check-test-conventions --base origin/main
-tkn-innerloop run /tmp/linters.plan.json --runtime podman --base origin/main
+tkn-innerloop run .tekton/linter.yaml --steps check-test-conventions
+tkn-innerloop run .tekton/go.yaml --runtime docker --refresh
+tkn-innerloop run /tmp/linters.plan.json        # a saved plan skips conversion
 tkn-innerloop skills install
 ```
 
-Docker is the default. Both container runtimes mount the worktree at `/workspace`,
-override the image entrypoint with the declared shell, and pass scripts via stdin.
-`BASE_SHA` uses `git merge-base HEAD <base-ref>` at execution; the default ref is
-`main`. Forward declared secrets explicitly with `--env NAME`. No credentials
-are fetched automatically.
+`--runtime auto` is the default: Podman if installed, else Docker. Both mount the
+worktree at `/workspace`, override the image entrypoint with the declared shell, and
+pass scripts via stdin. Docker's daemon runs as root, so after each step the runner
+gives files created in your checkout back to you; Podman already writes as you.
+`BASE_SHA` uses `git merge-base HEAD <base>`, where the base is origin's default
+branch, else `main`, else `master` (override with `--base`).
+
+Steps keep running after a failure unless a later step depends on the failed one.
+Exit codes: `0` every selected check passed, `1` a check failed, `2` all passed
+but some steps stayed unresolved, so the result is incomplete.
+
+Forward secrets explicitly with `--env NAME`. `required_env` blocks the run without
+it; `optional_env` (a token that only raises a rate limit, say) is forwarded only
+when you pass it and never blocks. No credentials are fetched automatically. The
+runner notes when an image tag now resolves to a different image than last time.
 
 `--runtime host` executes the same scripts with host tools, setup commands and
 environment. Use it only after reviewing those commands. Source image tags and
