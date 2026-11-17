@@ -1,6 +1,6 @@
 # Tekton checks in the local edit loop
 
-`tkn-innerloop` asks a coding agent to turn a Tekton PipelineRun into a local
+`tkn-innerloop` asks a coding agent to turn a Tekton PipelineRun or Pipeline into a local
 execution plan, then runs the plan in Podman or Docker after code edits.
 Kubernetes stays in CI. One command does it all:
 
@@ -28,12 +28,20 @@ cd /path/to/your/repository
 
 tkn-innerloop run .tekton/go.yaml                  # convert if needed, then run
 tkn-innerloop run .tekton/linter.yaml --steps codespell,yamllint
-tkn-innerloop run                                  # when .tekton/ has one pipeline
+tkn-innerloop run                                  # when the repository has one pipeline
 ```
 
 `run` picks the steps itself: steps that point at an external reference
 (`git-clone`, caches), `finally` tasks, steps marked `(skip-local)` and steps that
-push, deploy or post to an API stay on the cluster. The agent decides the rest.
+push, deploy or post to an API stay on the cluster. Add patterns for your own
+publishing tools in `.tekton-innerloop.yaml` at the repository root:
+
+```yaml
+cluster_only:
+  - '\bwrangler\s+deploy'
+```
+
+The entries are regular expressions added to the built-in list. The agent decides the rest.
 `--steps` replaces that choice. The plan is cached in `.tekton-innerloop/`, a folder
 that ignores itself, so nothing in your repository changes.
 
@@ -56,9 +64,39 @@ error; a step the agent leaves unresolved is never retried.
 The step names above are the PaC demo's scope; choose names from your pipeline.
 Use the full step ID from `inspect` when a step name is ambiguous. Files containing
 multiple YAML documents use `pipelinerun/task/step` IDs; a single PipelineRun uses
-`task/step`. Empty YAML documents are ignored. Generation supports embedded
-PipelineRuns; pipeline references must be resolved first. Remote task/step
-references appear in the inventory and cannot be executed as unresolved refs.
+`task/step`. Empty YAML documents are ignored.
+
+## Pipelines, references and Pipelines-as-Code
+
+A file can hold PipelineRuns, or Pipelines when it has no PipelineRun, along with
+any Tasks and StepActions they use; ConfigMaps, Secrets and other resources next
+to them are ignored. A `pipelineRef`, `taskRef` or step `ref` by name is looked up
+in the repository's tracked and untracked YAML files (git-ignored ones are
+skipped) and inlined, so a PipelineRun pointing at `tekton/pipeline.yaml` and Tasks under
+`tekton/tasks/` works as is. Those files become plan inputs: editing a Task makes
+the plan stale. A missing or remote `pipelineRef` is an error, since there is no
+step list to work from. A Task that is missing, defined twice, a ClusterTask, or
+fetched by a resolver (hub, git, bundles) stays an unresolved reference, and
+`inspect` says why. Parameter values reach the agent with the task's defaults;
+the agent applies them in its script edits. It also evaluates `when` guards it can
+decide from parameters, and has to loop over a `matrix` task's combinations or
+leave it unresolved (`inspect` marks those tasks).
+
+Without an argument, `run` looks in `.tekton/`, preferring PipelineRuns over
+Pipelines. It searches the whole repository only when `.tekton/` has no pipeline
+at all; if `.tekton/` has pipelines but none can run locally, it lists each one
+with the reason.
+
+A file with `pipelinesascode.tekton.dev/` annotations turns on Pipelines-as-Code
+handling. `{{ revision }}`, `{{ source_branch }}`, `{{ target_branch }}` and
+`{{ event_type }}` become `$HEAD_SHA`, `$HEAD_REF`, `$BASE_REF` and
+`pull_request`; the agent binds other placeholders or leaves the step unresolved.
+When `tkn-pac` is installed, the file first goes through `tkn pac resolve`, which
+also fetches tasks named in `pipelinesascode.tekton.dev/task` annotations. Its
+output is cached in `.tekton-innerloop/` and reused until an input changes or
+`--refresh`. If `tkn pac resolve` fails, local resolution takes over with a
+warning. Elsewhere `{{ … }}` is left alone, since Go templates are ordinary script
+text.
 
 ## Conversion and execution
 
@@ -123,7 +161,9 @@ worktree at `/workspace`, override the image entrypoint with the declared shell,
 pass scripts via stdin. Docker's daemon runs as root, so after each step the runner
 gives files created in your checkout back to you; Podman already writes as you.
 `BASE_SHA` uses `git merge-base HEAD <base>`, where the base is origin's default
-branch, else `main`, else `master` (override with `--base`).
+branch, else `main`, else `master` (override with `--base`). `BASE_REF` is that
+branch name without the remote, `HEAD_SHA` and `HEAD_REF` the current commit and
+branch. Each is computed only when a selected step uses it.
 
 Steps keep running after a failure unless a later step depends on the failed one.
 Exit codes: `0` every selected check passed, `1` a check failed, `2` all passed

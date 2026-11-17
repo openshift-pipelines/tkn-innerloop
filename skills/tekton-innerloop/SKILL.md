@@ -1,6 +1,6 @@
 ---
 name: tekton-innerloop
-description: Run a repository's Tekton checks locally. One command converts a PipelineRun with an agent (cached), then runs it in Podman or Docker without a Kubernetes cluster; use generate and validate to review the plan first.
+description: Run a repository's Tekton checks locally. One command converts a PipelineRun or Pipeline with an agent (cached), then runs it in Podman or Docker without a Kubernetes cluster; use generate and validate to review the plan first.
 ---
 
 # Tekton inner-loop validation
@@ -12,7 +12,7 @@ plan and executes it without calling a model during the edit loop.
 ## The one command
 
 ```sh
-tkn-innerloop run .tekton/go.yaml            # or just `run` if .tekton/ has one pipeline
+tkn-innerloop run .tekton/go.yaml            # or just `run` if the repository has one pipeline
 tkn-innerloop run .tekton/linter.yaml --steps codespell,yamllint
 ```
 
@@ -28,7 +28,11 @@ edit and report the exit code and the failing check output.
 Inspect the source inventory. Every step starts unresolved; inspection does not
 infer that a command is safe or runnable from its name.
 
-All PipelineRuns in a multi-document YAML file are inspected. Use the full ID
+All PipelineRuns in a multi-document YAML file are inspected; a file without a
+PipelineRun uses its Pipelines. Local `pipelineRef` and `taskRef` names are
+inlined from the repository's YAML files and those files become plan inputs.
+A missing or remote `pipelineRef` is an error. Missing, duplicate, ClusterTask
+and resolver task references stay unresolved; `inspect` shows the reason. Use the full ID
 shown by `inspect` to select ambiguous names: `pipelinerun/task/step` for multiple
 PipelineRuns, or `task/step` for a single one. Preserve follow-up annotations and
 cross-PipelineRun result requirements during conversion; leave them unresolved
@@ -53,6 +57,15 @@ Keep the source image, commands and flags. Propose exact script edits with a
 reason for each one; the CLI applies them to the original script. Preserve
 ordinary environment values, working directories and shell behavior. Record
 prerequisites in `depends_on` and configuration/helper paths in `inputs`.
+
+Apply Tekton `$(params.x)` values from the pipeline task's params or the Task
+defaults through script edits. For files with `pipelinesascode.tekton.dev/`
+annotations, `{{ revision }}`, `{{ source_branch }}`, `{{ target_branch }}` and
+`{{ event_type }}` are already bound to `$HEAD_SHA`, `$HEAD_REF`, `$BASE_REF` and
+`pull_request`; bind any other `{{ }}` placeholder or leave the step unresolved.
+With `tkn-pac` installed, those files first go through `tkn pac resolve`, which
+fetches annotation tasks; the cached output is a plan input. Add repository
+publishing commands to `cluster_only` regexes in `.tekton-innerloop.yaml`.
 
 Treat checkout as the mounted worktree. Explain optional cache removal. Leave
 unresolved references, services, volume requirements and unsupported interpreters
@@ -83,7 +96,8 @@ including any setup commands in those scripts.
 `BASE_SHA` comes from `git merge-base HEAD <base>` at execution; the base is
 origin's default branch, else `main`, else `master` (`--base` overrides). Declare any changed-file selection changes explicitly,
 including coverage of staged, unstaged and untracked files. Environment values
-and working directories support literal text plus `$WORKSPACE` and `$BASE_SHA`.
+and working directories support literal text plus `$WORKSPACE`, `$BASE_SHA`,
+`$BASE_REF`, `$HEAD_SHA` and `$HEAD_REF`.
 Secrets stay outside the plan: list names in `required_env` (the run is blocked
 without them) or, when a step still works without the value, in `optional_env`,
 and forward them explicitly with `--env NAME`. Do not fetch credentials automatically.

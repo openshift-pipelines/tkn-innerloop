@@ -3,3 +3,4 @@ demo/*-frame.png
 __pycache__/
 dist/
 demo/out/
+tmp/

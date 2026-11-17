@@ -485,6 +485,9 @@ class InnerloopTests(unittest.TestCase):
         self.assertEqual(agent.call_count, 3)
 
     def test_unbound_placeholder_is_named_and_hinted_on_retry(self):
+        source = yaml.safe_load(self.pipeline.read_text())
+        source["metadata"] = {"annotations": {"pipelinesascode.tekton.dev/on-event": "[pull_request]"}}
+        self.pipeline.write_text(yaml.safe_dump(source))
         bad = self.good_proposal()
         bad["steps"][0]["edits"] = [
             {"old": "exit 0", "new": "echo {{ body.pull_request.base.sha }}", "reason": "x"}
@@ -537,6 +540,7 @@ class InnerloopTests(unittest.TestCase):
                 {"name": "clone", "ref": {"name": "git-clone"}},
                 {"name": "hidden", "image": image, "script": "x", "displayName": "Sign (skip-local)"},
                 {"name": "ship", "image": image, "script": "podman push img"},
+                {"name": "dynamic", "image": "example.invalid/x:{{ source_branch }}", "script": "make"},
                 {
                     "name": "notify",
                     "image": image,
@@ -550,12 +554,25 @@ class InnerloopTests(unittest.TestCase):
         self.assertEqual(left["checks/clone"], "external reference")
         self.assertEqual(left["checks/hidden"], "marked skip-local")
         self.assertEqual(left["checks/ship"], "publishes or deploys")
+        self.assertEqual(left["checks/dynamic"], "image has an unresolved substitution")
         self.assertEqual(left["checks/notify"], "publishes or deploys")
         self.assertEqual(left["report/tail"], "runs after the pipeline")
 
     def test_pipeline_is_found_or_the_choice_is_listed(self):
         choose = MODULE["choose_pipeline"]
         step = [{"name": "a", "image": "example.invalid/x:1", "script": "true"}]
+        self.assertEqual(choose(self.root, None), self.pipeline.resolve())
+        bundle = self.root / ".tekton" / "bundle.yaml"
+        bundle.parent.mkdir()
+        bundle.write_text(
+            yaml.safe_dump({"kind": "PipelineRun", "spec": {"pipelineRef": {"resolver": "bundles"}}})
+        )
+        with self.assertRaisesRegex(
+            ValueError, r"No pipeline in \.tekton/ can run locally:\n    \.tekton/bundle\.yaml: .*remote pipelineRef"
+        ):
+            choose(self.root, None)
+        bundle.unlink()
+        self.pipeline.unlink()
         with self.assertRaisesRegex(ValueError, "No runnable PipelineRun"):
             choose(self.root, None)
         one = self.write_pipeline("one.yaml", step, annotations={"pipelinesascode.tekton.dev/on-event": "[pull_request]"})
@@ -870,12 +887,28 @@ class InnerloopTests(unittest.TestCase):
         source["metadata"] = {"name": "first"}
         for extra, error in [
             (source, "Duplicate PipelineRun"),
-            ({"kind": "Task"}, "Document 2"),
+            ("just text", "Document 2: expected a Kubernetes resource"),
             ({**source, "metadata": {}}, "need a name"),
         ]:
             self.pipeline.write_text(yaml.safe_dump_all([source, extra]))
             with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, error):
                 MODULE["inventory"](self.pipeline)
+
+    def test_unnamed_steps_and_unrelated_resources_are_handled(self):
+        source = yaml.safe_load(self.pipeline.read_text())
+        del source["spec"]["pipelineSpec"]["tasks"][0]["taskSpec"]["steps"][0]["name"]
+        self.pipeline.write_text(
+            yaml.safe_dump_all([{"kind": "PersistentVolumeClaim", "metadata": {"name": "x"}}, source])
+        )
+        self.assertEqual(list(MODULE["inventory"](self.pipeline)), ["checks/unnamed-0"])
+        source["spec"]["pipelineSpec"]["tasks"] = source["spec"]["pipelineSpec"]["tasks"][0]
+        self.pipeline.write_text(yaml.safe_dump(source))
+        with self.assertRaisesRegex(ValueError, "tasks must be a list"):
+            MODULE["inventory"](self.pipeline)
+        source["metadata"] = "bad"
+        self.pipeline.write_text(yaml.safe_dump(source))
+        with self.assertRaisesRegex(ValueError, "metadata must be a mapping"):
+            MODULE["inventory"](self.pipeline)
 
     def test_terminal_colors_respect_redirection_and_no_color(self):
         terminal = Mock()
@@ -911,12 +944,271 @@ class InnerloopTests(unittest.TestCase):
             self.assertEqual(self.run_plan(timeout=0.05), 1)
 
     def test_binding_expansion_preserves_other_variable_names(self):
+        bindings = dict.fromkeys(MODULE["RUNNER_VARS"], "")
+        bindings.update(WORKSPACE="/workspace", BASE_SHA="base")
         self.assertEqual(
-            MODULE["expand"](
-                "$WORKSPACE/${BASE_SHA}/$WORKSPACE_CACHE", "/workspace", "base"
-            ),
+            MODULE["expand"]("$WORKSPACE/${BASE_SHA}/$WORKSPACE_CACHE", bindings),
             "/workspace/base/$WORKSPACE_CACHE",
         )
+
+    def write_yaml(self, name, *documents):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump_all(documents))
+        return path
+
+    def task(self, name, script="exit 0"):
+        return {
+            "kind": "Task",
+            "metadata": {"name": name},
+            "spec": {
+                "params": [{"name": "go-version", "default": "1.22"}],
+                "steps": [{"name": "check", "image": "example.invalid/check:1", "script": script}],
+            },
+        }
+
+    def pipeline_doc(self, name="ci", task_ref=None):
+        return {
+            "kind": "Pipeline",
+            "metadata": {"name": name},
+            "spec": {"tasks": [{"name": "checks", "taskRef": task_ref or {"name": "lint"}}]},
+        }
+
+    def test_local_pipeline_and_task_references_are_inlined(self):
+        self.write_yaml("tekton/task.yaml", self.task("lint"))
+        self.write_yaml("tekton/pipeline.yaml", self.pipeline_doc())
+        self.pipeline.write_text(
+            yaml.safe_dump({"kind": "PipelineRun", "spec": {"pipelineRef": {"name": "ci"}}})
+        )
+        sources = MODULE["inventory"](self.pipeline, self.root)
+        self.assertEqual(list(sources), ["checks/check"])
+        source = sources["checks/check"]
+        self.assertEqual(source["step"]["image"], "example.invalid/check:1")
+        self.assertEqual(source["defined_in"], ["tekton/pipeline.yaml", "tekton/task.yaml"])
+        self.assertEqual(source["task_defaults"]["params"][0]["default"], "1.22")
+
+    def test_step_image_parameters_are_filled_from_literal_values(self):
+        task = self.task("lint")
+        task["spec"]["steps"][0]["image"] = "example.invalid/go:$(params.go-version)"
+        pipeline = self.pipeline_doc()
+        pipeline["spec"]["params"] = [{"name": "go", "default": "1.23"}]
+        run = {"kind": "PipelineRun", "spec": {"pipelineRef": {"name": "ci"}}}
+        self.write_yaml("task.yaml", task)
+        for task_params, run_params, image in [
+            (None, None, "example.invalid/go:1.22"),
+            ([{"name": "go-version", "value": "$(params.go)"}], None, "example.invalid/go:1.23"),
+            (
+                [{"name": "go-version", "value": "$(params.go)"}],
+                [{"name": "go", "value": "1.24"}],
+                "example.invalid/go:1.24",
+            ),
+            (
+                [{"name": "go-version", "value": "$(tasks.a.results.v)"}],
+                None,
+                "example.invalid/go:$(params.go-version)",
+            ),
+            ([{"name": "go-version", "value": ["1.21"]}], None, "example.invalid/go:$(params.go-version)"),
+        ]:
+            pipeline["spec"]["tasks"][0]["params"] = task_params
+            run["spec"]["params"] = run_params
+            self.pipeline.write_text(yaml.safe_dump_all([run, pipeline]))
+            with self.subTest(image=image):
+                step = MODULE["inventory"](self.pipeline, self.root)["checks/check"]["step"]
+                self.assertEqual(step["image"], image)
+        self.write_source([{"name": "check", "image": "x:$(params.v)", "script": "exit 0"}])
+        self.plan["inputs"]["pipeline.yaml"] = MODULE["digest"](self.pipeline)
+        self.plan["steps"][0]["image"] = "x:$(params.v)"
+        with self.assertRaisesRegex(ValueError, "unresolved substitution"):
+            self.validate()
+
+    def test_bracket_image_parameters_and_pac_images_are_not_shell_bound(self):
+        self.write_source(
+            [{"name": "check", "image": "x:$(params['v'])", "script": "echo {{revision}}"}]
+        )
+        source = yaml.safe_load(self.pipeline.read_text())
+        task = source["spec"]["pipelineSpec"]["tasks"][0]
+        task["params"] = [{"name": "v", "value": "{{revision}}"}]
+        source["metadata"] = {"annotations": {"pipelinesascode.tekton.dev/on-event": "[pull_request]"}}
+        self.pipeline.write_text(yaml.safe_dump(source))
+        step = MODULE["inventory"](self.pipeline)["checks/check"]["step"]
+        self.assertEqual(step["image"], "x:{{revision}}")
+        self.assertEqual(step["script"], "echo $HEAD_SHA")
+        self.plan["inputs"]["pipeline.yaml"] = MODULE["digest"](self.pipeline)
+        self.plan["steps"][0].update(image=step["image"], script=step["script"], edits=[])
+        with self.assertRaisesRegex(ValueError, "image x:\\{\\{revision\\}\\} has an unresolved"):
+            self.validate()
+
+    def test_plain_pipeline_file_with_its_tasks_is_an_entry_point(self):
+        self.pipeline.write_text(
+            yaml.safe_dump_all([self.pipeline_doc(), self.task("lint")])
+        )
+        self.plan["inputs"]["pipeline.yaml"] = MODULE["digest"](self.pipeline)
+        sources = MODULE["inventory"](self.pipeline, self.root)
+        self.assertEqual(sources["checks/check"]["defined_in"], [])
+        self.validate()
+
+    def test_missing_ambiguous_and_remote_task_references_stay_references(self):
+        self.write_yaml("a.yaml", self.task("twice"))
+        self.write_yaml("b.yaml", self.task("twice"))
+        for ref, note in [
+            ({"name": "absent"}, "no Task named absent"),
+            ({"name": "twice"}, "defined more than once: a.yaml, b.yaml"),
+            ({"name": "same"}, "defined more than once in pipeline.yaml"),
+            ({"resolver": "git", "params": []}, "git resolver"),
+            ({"name": "lint", "kind": "ClusterTask"}, "ClusterTask reference"),
+        ]:
+            self.pipeline.write_text(
+                yaml.safe_dump_all([self.pipeline_doc(task_ref=ref), self.task("same"), self.task("same")])
+            )
+            with self.subTest(ref=ref):
+                source = MODULE["inventory"](self.pipeline, self.root)["checks/task"]
+                self.assertIn(note, source["reference_note"])
+                self.assertNotIn("image", source["step"])
+
+    def test_local_step_actions_are_inlined(self):
+        self.write_yaml(
+            "stepactions/build.yaml",
+            {
+                "kind": "StepAction",
+                "metadata": {"name": "build"},
+                "spec": {
+                    "params": [{"name": "version", "default": "1.21"}],
+                    "image": "example.invalid/go:$(params.version)",
+                    "script": "go build $(params.version)",
+                },
+            },
+        )
+        lint = self.task("lint")
+        lint["spec"]["steps"] = [
+            {"name": "build", "ref": {"name": "build"}, "params": [{"name": "version", "value": "$(params.go-version)"}]},
+            {"name": "clone", "ref": {"resolver": "hub", "params": []}},
+        ]
+        self.pipeline.write_text(yaml.safe_dump_all([self.pipeline_doc(), lint]))
+        sources = MODULE["inventory"](self.pipeline, self.root)
+        build = sources["checks/build"]
+        self.assertEqual(build["step"]["image"], "example.invalid/go:1.22")
+        self.assertEqual(build["step"]["script"], "go build $(params.version)")
+        self.assertNotIn("ref", build["step"])
+        self.assertEqual(build["step_action"]["name"], "build")
+        self.assertEqual(build["defined_in"], ["stepactions/build.yaml"])
+        self.assertIn("hub resolver", sources["checks/clone"]["reference_note"])
+
+    def test_missing_or_remote_pipeline_reference_is_an_error(self):
+        pac = {"annotations": {"pipelinesascode.tekton.dev/pipeline": "https://example.invalid/p.yaml"}}
+        for ref, metadata, error in [
+            ({"name": "absent"}, {}, "no Pipeline named absent in the repository$"),
+            ({"name": "absent"}, pac, "no Pipeline named absent .*install tkn-pac"),
+            ({"resolver": "hub", "params": []}, {}, "remote pipelineRef"),
+        ]:
+            self.pipeline.write_text(
+                yaml.safe_dump({"kind": "PipelineRun", "metadata": metadata, "spec": {"pipelineRef": ref}})
+            )
+            with self.subTest(ref=ref), self.assertRaisesRegex(ValueError, error):
+                MODULE["inventory"](self.pipeline, self.root)
+
+    def test_referenced_definitions_are_plan_inputs_and_invalidate_it(self):
+        task = self.write_yaml("tasks/lint.yaml", self.task("lint"))
+        self.pipeline.write_text(yaml.safe_dump(self.pipeline_doc()))
+        self.plan["inputs"]["pipeline.yaml"] = MODULE["digest"](self.pipeline)
+        with self.assertRaisesRegex(ValueError, "now reads tasks/lint.yaml"):
+            self.validate()
+        sources = MODULE["inventory"](self.pipeline, self.root)
+        plan = MODULE["assemble_plan"](
+            self.good_proposal(), self.root, "pipeline.yaml", sources, ["checks/check"]
+        )
+        self.assertIn("tasks/lint.yaml", plan["inputs"])
+        self.plan = plan
+        self.validate()
+        task.write_text(yaml.safe_dump(self.task("lint", "exit 1")))
+        with self.assertRaisesRegex(ValueError, "Stale plan: tasks/lint.yaml"):
+            self.validate()
+
+    def test_pac_placeholders_are_only_checked_and_bound_for_pac_files(self):
+        self.set_script('echo "{{ .Version }}"')
+        self.validate()
+        source = yaml.safe_load(self.pipeline.read_text())
+        source["metadata"] = {"annotations": {"pipelinesascode.tekton.dev/on-event": "[pull_request]"}}
+        source["spec"]["pipelineSpec"]["tasks"][0]["taskSpec"]["steps"][0]["script"] = (
+            "git diff {{ revision }} {{target_branch}} {{ hash }}"
+        )
+        self.pipeline.write_text(yaml.safe_dump(source))
+        step = MODULE["inventory"](self.pipeline)["checks/check"]["step"]
+        self.assertEqual(step["script"], "git diff $HEAD_SHA $BASE_REF {{ hash }}")
+        self.plan["inputs"]["pipeline.yaml"] = MODULE["digest"](self.pipeline)
+        self.plan["steps"][0].update(script=step["script"], edits=[])
+        with self.assertRaisesRegex(ValueError, r"unresolved Tekton or PaC substitution: \{\{ hash \}\}"):
+            self.validate()
+
+    def test_runner_supplies_head_and_base_branch_variables(self):
+        self.set_script('test "$HEAD_SHA:$HEAD_REF:$BASE_REF" = "sha:topic:main"')
+        answers = {
+            ("rev-parse", "HEAD"): "sha",
+            ("rev-parse", "--abbrev-ref", "HEAD"): "topic",
+            ("remote",): "origin\nupstream",
+        }
+        with patch.dict(GLOBALS, git=lambda root, *args: answers[args]):
+            self.assertEqual(self.run_plan(base="origin/main"), 0)
+        self.plan["steps"][0]["required_env"] = ["HEAD_SHA"]
+        with self.assertRaisesRegex(ValueError, "supplied by the runner"):
+            self.validate()
+
+    def test_repository_config_adds_cluster_only_patterns(self):
+        sources = {
+            "checks/docs": {
+                "step": {"image": "x", "script": "npx wrangler deploy"},
+                "task_context": {},
+                "finally": False,
+            }
+        }
+        patterns = MODULE["cluster_patterns"](self.root)
+        self.assertEqual(MODULE["auto_scope"](sources, patterns)[0], ["checks/docs"])
+        (self.root / ".tekton-innerloop.yaml").write_text("cluster_only: ['\\bwrangler\\s+deploy']\n")
+        patterns = MODULE["cluster_patterns"](self.root)
+        self.assertEqual(
+            MODULE["auto_scope"](sources, patterns)[1], {"checks/docs": "publishes or deploys"}
+        )
+        for text in ("cluster_only: ['(']\n", "cluster_only: x\n", "other: []\n"):
+            (self.root / ".tekton-innerloop.yaml").write_text(text)
+            with self.subTest(text=text), self.assertRaisesRegex(ValueError, ".tekton-innerloop.yaml"):
+                MODULE["cluster_patterns"](self.root)
+
+    def fake_tkn_pac(self, body, version="0.40.0"):
+        bindir = self.root / "bin"
+        bindir.mkdir(exist_ok=True)
+        tool = bindir / "tkn-pac"
+        tool.write_text(f'#!/bin/sh\n[ "$1" = version ] && {{ echo "{version}"; exit 0; }}\n{body}\n')
+        tool.chmod(0o755)
+        return patch.dict(os.environ, {"PATH": f"{bindir}:{os.environ['PATH']}"})
+
+    def test_tkn_pac_resolution_is_cached_and_falls_back_on_failure(self):
+        source = yaml.safe_load(self.pipeline.read_text())
+        source["metadata"] = {"annotations": {"pipelinesascode.tekton.dev/task": "git-clone"}}
+        self.pipeline.write_text(yaml.safe_dump(source))
+        resolved = yaml.safe_dump({**source, "metadata": {"name": "resolved", **source["metadata"]}})
+        calls = self.root / "calls"
+        out = io.StringIO()
+        resolver = f"echo \"$@\" >> {calls}\ncat <<'EOF'\n{resolved}EOF"
+        for version, runs in [("0.40.0", 1), ("0.40.0", 1), ("0.41.0", 2)]:
+            GLOBALS["_tkn_pac_versions"].clear()
+            with self.fake_tkn_pac(resolver, version), contextlib.redirect_stdout(out):
+                path, extra = MODULE["plan_source"](self.root, self.pipeline)
+            self.assertEqual(len(calls.read_text().splitlines()), runs, version)
+        self.assertEqual(path.parent.name, ".tekton-innerloop")
+        self.assertEqual(extra, [])
+        self.assertIn("-p revision=$HEAD_SHA", calls.read_text())
+        sources = MODULE["inventory"](path, self.root)
+        plan = MODULE["assemble_plan"](
+            self.good_proposal(), self.root, "pipeline.yaml", sources, ["checks/check"],
+            str(path.relative_to(self.root)),
+        )
+        self.assertIn(plan["resolved"], plan["inputs"])
+        self.plan = plan
+        self.validate()
+        with self.fake_tkn_pac("echo boom >&2; exit 1"), contextlib.redirect_stdout(out):
+            self.assertEqual(
+                MODULE["plan_source"](self.root, self.pipeline, refresh=True)[0], self.pipeline
+            )
+        self.assertIn("tkn pac resolve failed (boom)", out.getvalue())
 
 
 if __name__ == "__main__":
