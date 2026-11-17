@@ -336,8 +336,100 @@ def parse_pipeline_file(path: Path) -> tuple[str, dict[str, str], list[StepClass
     return pr_name, annotations, classifications, repo_root, base_sha
 
 
+def strip_markdown_fences(text: str) -> str:
+    text = text.strip()
+    m = re.search(r"```(?:[a-zA-Z0-9_-]+)?\n(.*?)```", text, flags=re.DOTALL)
+    if m:
+        return m.group(1).strip() + "\n"
+    return text + "\n"
+
+
+def invoke_pi_agent(
+    yaml_path: Path,
+    mode: str,
+    runtime: str,
+    selected_steps: str | None = None,
+    model: str | None = None,
+) -> str:
+    """
+    Falls back to invoking the `pi` coding agent CLI (`pi -p --no-session --no-tools`)
+    to inspect a complex Tekton YAML and synthesize either a classification table,
+    a `docker run` / `podman run` bash script, or a multi-stage `Dockerfile`.
+    """
+    if not shutil.which("pi"):
+        raise RuntimeError("`pi` CLI not found on PATH; cannot run `--ai` agent fallback.")
+
+    model = model or os.environ.get("TKN_INNERLOOP_AI_MODEL") or None
+
+    yaml_content = yaml_path.read_text()
+    step_filter_hint = f"Focus only on these steps: {selected_steps}.\n" if selected_steps else ""
+
+    if mode == "inspect":
+        prompt = (
+            "You are a Tekton CI inner-loop analyzer.\n"
+            "Inspect the following Tekton PipelineRun YAML and classify each task/step into:\n"
+            "- RUN LOCAL (inner-loop linters, unit tests, convention checks)\n"
+            "- ADAPT LOCAL (needs secret/download substitution with local binaries or env vars)\n"
+            "- SKIP OUTER (git-clone, cache upload/fetch, image push, signing, cluster deploy)\n\n"
+            "Output a concise, aligned terminal table (STEP | DECISION | CONTAINER IMAGE | WHY) "
+            "followed by a 2-line summary of how to run the inner-loop steps locally with Docker/Podman.\n\n"
+            f"```yaml\n{yaml_content}\n```"
+        )
+    elif runtime == "dockerfile":
+        prompt = (
+            "You are a Tekton-to-Docker translator.\n"
+            "Inspect the following Tekton PipelineRun YAML, select the inner-loop validation steps "
+            "(skip git-clone, cache-fetch/upload, deployments, and release pushes), and output ONLY a valid "
+            "multi-stage `Dockerfile` (plus a `# Usage: docker build ...` comment header at the top) that "
+            "runs the exact inner-loop commands against `/workspace`.\n"
+            "Replace `$(workspaces.source.path)` with `/workspace` and bind Pipelines-as-Code PR variables "
+            "(`{{ headers['X-Github-Event'] }}` -> `pull_request`, `{{ body.pull_request.base.sha }}` -> `HEAD~1`).\n"
+            f"{step_filter_hint}"
+            "Return ONLY the raw Dockerfile inside a single code block.\n\n"
+            f"```yaml\n{yaml_content}\n```"
+        )
+    else:
+        engine = "docker" if runtime in ("docker", "host") else runtime
+        prompt = (
+            f"You are a Tekton-to-{engine} inner-loop translator.\n"
+            "Inspect the following Tekton PipelineRun YAML, select the inner-loop validation steps "
+            "(skip git-clone, cache-fetch/upload, deployments, and release pushes), and output ONLY a "
+            f"ready-to-run `#!/usr/bin/env bash` script that executes each inner-loop step via `{engine} run --rm "
+            '-v "$WORKSPACE:/workspace:Z" -w /workspace <step-image> bash -s`.\n'
+            "Use `WORKSPACE=\"$(git rev-parse --show-toplevel)\"` (never hardcode user home paths), "
+            "replace `$(workspaces.source.path)` with `/workspace`, and bind Pipelines-as-Code PR variables "
+            "(`{{ headers['X-Github-Event'] }}` -> `pull_request`, `{{ body.pull_request.base.sha }}` -> "
+            "`$(git merge-base HEAD main)`).\n"
+            f"{step_filter_hint}"
+            "Return ONLY the executable bash script.\n\n"
+            f"```yaml\n{yaml_content}\n```"
+        )
+
+    cmd = ["pi", "-p", "--no-session", "--no-tools", "--no-mcp", "--no-extensions", "--thinking", "off"]
+    if model:
+        cmd.extend(["--model", model])
+    cmd.append(prompt)
+
+    print(
+        f"{BOLD}{MAGENTA}🤖 Invoking `pi` AI agent fallback{RESET} "
+        f"{DIM}(mode={mode}, runtime={runtime}{', model=' + model if model else ''}){RESET}...",
+        file=sys.stderr,
+        flush=True,
+    )
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
+    if proc.returncode != 0:
+        raise RuntimeError(f"`pi` agent failed (exit {proc.returncode}): {proc.stderr.strip()}")
+    if mode == "inspect":
+        return proc.stdout.strip() + "\n"
+    return strip_markdown_fences(proc.stdout)
+
+
 def cmd_inspect(args: argparse.Namespace) -> int:
     path = Path(args.file)
+    if getattr(args, "ai", False):
+        out = invoke_pi_agent(path, mode="inspect", runtime="docker", model=getattr(args, "model", None))
+        print(out)
+        return 0
     pr_name, annotations, steps, repo_root, base_sha = parse_pipeline_file(path)
 
     on_event = annotations.get("pipelinesascode.tekton.dev/on-event", "N/A")
@@ -415,15 +507,26 @@ def generate_runner_script(
 
 def cmd_generate(args: argparse.Namespace) -> int:
     path = Path(args.file)
-    pr_name, _, steps, repo_root, _ = parse_pipeline_file(path)
-    selected = set(args.steps.split(",")) if args.steps else None
-    script_text = generate_runner_script(pr_name, steps, repo_root, args.runtime, selected)
+    if getattr(args, "ai", False) or args.runtime == "dockerfile":
+        script_text = invoke_pi_agent(
+            path,
+            mode="generate",
+            runtime=args.runtime,
+            selected_steps=args.steps,
+            model=getattr(args, "model", None),
+        )
+    else:
+        pr_name, _, steps, repo_root, _ = parse_pipeline_file(path)
+        selected = set(args.steps.split(",")) if args.steps else None
+        script_text = generate_runner_script(pr_name, steps, repo_root, args.runtime, selected)
 
     if args.output:
         out_path = Path(args.output)
         out_path.write_text(script_text)
-        out_path.chmod(0o755)
-        print(f"{GREEN}✔ Generated local inner-loop script:{RESET} {BOLD}{out_path}{RESET} (runtime={args.runtime})")
+        if args.runtime != "dockerfile":
+            out_path.chmod(0o755)
+        mode_tag = f"ai+{args.runtime}" if getattr(args, "ai", False) or args.runtime == "dockerfile" else args.runtime
+        print(f"{GREEN}✔ Generated local inner-loop artifact:{RESET} {BOLD}{out_path}{RESET} (mode={mode_tag})")
     else:
         print(script_text)
     return 0
@@ -533,12 +636,16 @@ def main() -> int:
 
     p_inspect = sub.add_parser("inspect", help="Analyze a .tekton PipelineRun for inner-loop vs outer-loop steps")
     p_inspect.add_argument("file", help="Path to .tekton/*.yaml PipelineRun")
+    p_inspect.add_argument("--ai", action="store_true", help="Fall back to `pi` AI agent to inspect complex/custom YAML")
+    p_inspect.add_argument("--model", help="Optional model for `pi` when using --ai (default: $TKN_INNERLOOP_AI_MODEL)")
 
-    p_gen = sub.add_parser("generate", help="Generate a local host or Podman/Docker script from a PipelineRun")
+    p_gen = sub.add_parser("generate", help="Generate a local host, Docker/Podman script, or Dockerfile from a PipelineRun")
     p_gen.add_argument("file", help="Path to .tekton/*.yaml PipelineRun")
-    p_gen.add_argument("--runtime", choices=["host", "podman", "docker"], default="host")
+    p_gen.add_argument("--runtime", choices=["host", "podman", "docker", "dockerfile"], default="host")
     p_gen.add_argument("--steps", help="Comma-separated list of steps to include")
-    p_gen.add_argument("-o", "--output", help="Write executable script to path")
+    p_gen.add_argument("--ai", action="store_true", help="Fall back to `pi` AI agent to synthesize Docker/Podman runner or Dockerfile")
+    p_gen.add_argument("--model", help="Optional model for `pi` when using --ai (default: $TKN_INNERLOOP_AI_MODEL)")
+    p_gen.add_argument("-o", "--output", help="Write generated script or Dockerfile to path")
 
     p_run = sub.add_parser("run", help="Execute inner-loop Tekton steps locally")
     p_run.add_argument("file", help="Path to .tekton/*.yaml PipelineRun")

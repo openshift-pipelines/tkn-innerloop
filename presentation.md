@@ -191,9 +191,57 @@ This is real output from running `tkn-innerloop` on the `pipelines-as-code` repo
 ## Step 4: Ship the Skill inside the CLI
 
 - **Self-contained CLI + Skill** — `tkn-innerloop skills install` drops `SKILL.md` straight into `.agents/skills/`.
-- **Zero Kubernetes tax** — Works with native host binaries for speed or `podman run` for container parity.
-- **Links** — [Watch Recorded Demo (MP4)](https://share.chmouel.com/public/anI42ciUddooksIZkT-sLw/tkn-innerloop-demo.mp4) · [Agent Skill (`SKILL.md`)](https://share.chmouel.com/public/Kp0H0sAZIfR7NAipLx3THg/SKILL.md)
+- **Zero Kubernetes tax** — Works with native host binaries for speed or `podman run`/`docker run` for container parity.
+- **Links** — [Watch Recorded Demo (MP4)](https://share.chmouel.com/public/jZRofFOy4r48bL-fgQtGUw/tkn-innerloop-demo.mp4) · [Agent Skill (`SKILL.md`)](https://share.chmouel.com/public/Kp0H0sAZIfR7NAipLx3THg/SKILL.md)
 
 <!-- notes:
 Following the Android CLI pattern we discussed in the meeting, the CLI can print or install the Agent Skill directly so coding agents always stay in sync.
 -->
+
+<!-- slide: bg=accent -->
+## Step 5: When the rules are not enough, ask an agent
+
+<!-- notes:
+Rules cover linters and convention scripts. Real pipelines also carry remote StepActions, cluster secrets, caches and generated code, so we need an escape hatch.
+-->
+
+## The AI fallback: YAML in, Dockerfile out
+
+```mermaid
+flowchart LR
+  YAML@{ img: "/icons/file-code.svg", label: "go.yaml", w: 48, h: 48, constraint: "on" }
+  Rules@{ img: "/icons/filter.svg", label: "Rule engine", w: 48, h: 48, constraint: "on" }
+  Odd@{ img: "/icons/warning.svg", label: "Too custom", w: 48, h: 48, constraint: "on" }
+  Agent@{ img: "/icons/agent.svg", label: "pi + DeepSeek", w: 48, h: 48, constraint: "on" }
+  Dockerfile@{ img: "/icons/container.svg", label: "Dockerfile", w: 48, h: 48, constraint: "on" }
+  Run@{ img: "/icons/terminal.svg", label: "docker run", w: 48, h: 48, constraint: "on" }
+  Green@{ img: "/icons/success.svg", label: "Lint + tests", w: 48, h: 48, constraint: "on" }
+
+  YAML --> Rules
+  Rules -->|lint, tests, conventions| Dockerfile
+  Rules -->|remote steps, secrets, caches| Odd
+  Odd --> Agent
+  Agent --> Dockerfile
+  Agent --> Run
+  Dockerfile --> Green
+  Run --> Green
+
+%% play: Known steps, translated by rules
+%% skip Odd Agent Run
+%% YAML -> Rules : 15 steps | Read the pipeline once
+%% Rules -> Dockerfile : known | Linters, tests and convention scripts are translated deterministically
+%% Dockerfile -> Green : docker build | Multi-stage build reproduces the exact CI images and flags
+%% play: Odd steps, translated by the agent
+%% skip Dockerfile
+%% YAML -> Rules : 15 steps
+%% Rules -> Odd : unsupported | Remote StepActions, cluster secrets and caches cannot be rewritten by rules
+%% Odd -> Agent : yaml | The whole pipeline is handed to a coding agent with no tools
+%% wait 800 | About five seconds of thinking
+%% Agent -> Run : script | A ready docker run script, or a Dockerfile with the same images
+%% Run -> Green : pass | Same linters, same flags, no cluster
+```
+
+<!-- notes:
+The fallback is opt-in: `--ai`. We demo it with `.tekton/go.yaml`, which needs gotestsum, a Go cache and a cluster token, so the agent writes a multi-stage Dockerfile for the unittest and lint steps. The model is chosen with `--model` or `TKN_INNERLOOP_AI_MODEL`; here it is DeepSeek V4.1 Flash on enmaas.
+-->
+

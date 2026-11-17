@@ -4,8 +4,8 @@ Instead of re-implementing Kubernetes locally, this PoC pairs an **Agent Skill (
 
 ## Public Links
 
-- **Animated Presentation Deck (`presentation.md`)**: [Open on sharei](https://share.chmouel.com/public/P_7zgBXgFWENAIVt2UOeeg/presentation.md)
-- **Recorded Demo Video (MP4 with Elevator Music)**: <https://share.chmouel.com/public/anI42ciUddooksIZkT-sLw/tkn-innerloop-demo.mp4>
+- **Animated Presentation Deck (`presentation.md`)**: [Open on sharei](https://share.chmouel.com/public/57nbwkqrKZHn9buLawb9wg/presentation.md)
+- **Recorded Demo Video (MP4 with Elevator Music)**: <https://share.chmouel.com/public/jZRofFOy4r48bL-fgQtGUw/tkn-innerloop-demo.mp4>
 - **Agent Skill (`SKILL.md`)**: <https://share.chmouel.com/public/Kp0H0sAZIfR7NAipLx3THg/SKILL.md>
 
 ## How It Works (Plain English)
@@ -25,6 +25,11 @@ Instead of re-implementing Kubernetes locally, this PoC pairs an **Agent Skill (
 4. **Pluggable Podman / Host Script Generation + Built-in Skill**
    - `tkn-innerloop generate .tekton/linter.yaml --runtime podman` outputs a ready-to-run `podman run --rm -v "$WORKSPACE:/workspace:Z"` script using each step's exact container image.
    - `tkn-innerloop skills show` / `tkn-innerloop skills install` ships the skill inside the CLI.
+
+5. **AI Fallback When the Rules Are Not Enough**
+   - Some pipelines carry remote StepActions, cluster secrets, caches or generated code that rules cannot safely rewrite.
+   - `tkn-innerloop generate .tekton/go.yaml --ai --runtime dockerfile` hands the YAML to a coding agent (here `pi`) and gets back a multi-stage `Dockerfile` with the same images and flags; `--ai --runtime docker` returns a `docker run` script instead.
+   - The agent runs with no tools (`pi -p --no-tools`), so it only reads the YAML and writes the artifact. Pick a model with `--model` or `TKN_INNERLOOP_AI_MODEL` (the demo uses `enmaas/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017`).
 
 ```mermaid
 flowchart LR
@@ -54,7 +59,8 @@ flowchart LR
 - `SKILL.md` & `skills/tekton-innerloop/SKILL.md` — The Agent Skill instructing coding agents how to inspect, generate, and run `.tekton` inner-loop checks and honor `(run-local)` / `(skip-local)` descriptions.
 - `presentation.md` — Animated `aniflow` slide deck explaining the architecture and workflow.
 - `bin/tkn-innerloop` — CLI with `inspect`, `generate` (`--runtime host|podman|docker`), `run` (`--steps`, `--fail-fast`), and `skills` (`show|install`).
-- `demo/demo.tape` — VHS tape used to record the end-to-end execution against `.tekton/linter.yaml`.
+- `demo/demo.tape` — VHS tape used to record the end-to-end execution against `.tekton/linter.yaml` and the `--ai` Dockerfile fallback.
+- `demo/record.sh` — Rebuilds the recording and its soundtrack (`PAC_REPO=/path/to/pipelines-as-code ./demo/record.sh`).
 - `demo/banner.sh` — Terminal explanation banners used in the recording.
 - `demo/generate_elevator_music.py` — Synthesizes the Bossa-Nova / Rhodes lounge background track.
 - `demo/toggle-defects.sh` — Helper script that injects and fixes the `check-test-conventions` + `codespell` violations during the recording.
