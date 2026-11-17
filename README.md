@@ -172,6 +172,10 @@ one run and removed afterwards: task results are written there and read by the
 tasks that consume them.
 
 Steps keep running after a failure unless a later step depends on the failed one.
+A failure under `onError: continue` does not fail the run. On a step it is
+ignored; on a pipeline task the rest of that task's steps are skipped, as in
+Tekton, and the tasks after it still run. A container that fails to start still
+fails the run.
 Exit codes: `0` every selected check passed, `1` a check failed, `2` all passed
 but some steps stayed unresolved, so the result is incomplete.
 

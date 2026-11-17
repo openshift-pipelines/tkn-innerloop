@@ -409,7 +409,9 @@ class InnerloopTests(unittest.TestCase):
         self.assertEqual(
             cmd[-5:], ["--entrypoint", "/bin/sh", "example.invalid/check:1", "-e", "-s"]
         )
-        process.communicate.assert_called_once_with("exit 0\n", timeout=2)
+        process.communicate.assert_called_once_with(
+            ': > /results/.tkn-innerloop-started || :\nexit 0\n', timeout=2
+        )
 
     def test_agent_generation_scopes_work_and_preserves_complete_coverage(self):
         self.write_source(
@@ -773,6 +775,88 @@ class InnerloopTests(unittest.TestCase):
         self.assertIn("checks/a failed (exit 1), ignored: onError is continue", out.getvalue())
         self.assertIn("1 failed with onError: continue", out.getvalue())
 
+    def test_task_on_error_continue_stops_the_task_but_not_the_pipeline(self):
+        self.multi_step_plan(
+            [
+                ("a", "exit 1", []),
+                ("b", 'touch "$WORKSPACE/ran-b"', []),
+                ("c", 'touch "$WORKSPACE/ran-c"', []),
+            ]
+        )
+        image = "example.invalid/check:1"
+        self.pipeline.write_text(
+            yaml.safe_dump(
+                {
+                    "kind": "PipelineRun",
+                    "spec": {
+                        "pipelineSpec": {
+                            "tasks": [
+                                {
+                                    "name": "checks",
+                                    "onError": "continue",
+                                    "taskSpec": {
+                                        "steps": [
+                                            {"name": "a", "image": image, "script": "exit 1"},
+                                            {"name": "b", "image": image, "script": 'touch "$WORKSPACE/ran-b"'},
+                                        ]
+                                    },
+                                },
+                                {
+                                    "name": "later",
+                                    "runAfter": ["checks"],
+                                    "taskSpec": {
+                                        "steps": [
+                                            {"name": "c", "image": image, "script": 'touch "$WORKSPACE/ran-c"'}
+                                        ]
+                                    },
+                                },
+                            ]
+                        }
+                    },
+                }
+            )
+        )
+        self.plan["inputs"]["pipeline.yaml"] = MODULE["digest"](self.pipeline)
+        self.plan["steps"][2].update(id="later/c", depends_on=["checks/b"])
+        out = io.StringIO()
+        self.assertEqual(self.run_plan(capture=out), 0)
+        self.assertFalse((self.root / "ran-b").exists())
+        self.assertTrue((self.root / "ran-c").exists())
+        self.assertIn("checks/b skipped: checks/a stopped its task", out.getvalue())
+        self.assertIn("1 not run after them", out.getvalue())
+
+    def test_on_error_continue_applies_only_once_the_script_started(self):
+        image = "example.invalid/check:1"
+        self.write_source([{"name": "check", "image": image, "script": "exit 127", "onError": "continue"}])
+        self.plan["inputs"]["pipeline.yaml"] = MODULE["digest"](self.pipeline)
+        self.plan["steps"][0]["script"] = "exit 127"
+        self.assertEqual(self.run_plan(), 0)
+        odd = Path(os.environ["XDG_CACHE_HOME"]) / 'a $HOME `false` "q'
+        with patch.dict(os.environ, XDG_CACHE_HOME=str(odd)):
+            self.assertEqual(self.run_plan(), 0)
+        # The container runtime fails the same way when the image has no such shell.
+        with (
+            patch.object(subprocess, "Popen", return_value=Mock(returncode=127)),
+            patch.object(subprocess, "run", return_value=Mock(returncode=0, stdout="sha256:aaa")),
+            patch.object(MODULE["shutil"], "which", return_value="/usr/bin/podman"),
+        ):
+            self.assertEqual(self.run_plan(runtime="podman"), 1)
+
+    def test_independent_steps_run_after_a_timeout(self):
+        self.multi_step_plan([("a", "sleep 5", []), ("b", 'touch "$WORKSPACE/ran-b"', [])])
+        self.assertEqual(self.run_plan(timeout=0.2), 1)
+        self.assertTrue((self.root / "ran-b").exists())
+
+    def test_results_directory_is_writable_by_any_container_user(self):
+        self.cache.mkdir(parents=True)
+        self.cache.chmod(0o755)
+        self.multi_step_plan(
+            [("a", 'stat -c %a "$RESULTS" > "$WORKSPACE/mode"; stat -c %a "$RESULTS/.." > "$WORKSPACE/parent"', [])]
+        )
+        self.assertEqual(self.run_plan(), 0)
+        self.assertEqual((self.root / "mode").read_text().strip(), "777")
+        self.assertEqual((self.root / "parent").read_text().strip(), "700")
+
     def run_container(self, runtime, uid=1000, **extra):
         process = Mock(returncode=0)
         run = Mock(return_value=Mock(returncode=0, stdout="sha256:aaa"))
@@ -792,7 +876,8 @@ class InnerloopTests(unittest.TestCase):
         ]
         docker = chowns(self.run_container("docker"))
         self.assertEqual(len(docker), 1)
-        self.assertIn("find /workspace /results -user 0 -exec chown 1000:1000 {} +", docker[0].args[0])
+        self.assertIn("find /workspace /results ! -user 1000 -exec chown 1000:1000 {} +", docker[0].args[0])
+        self.assertEqual(docker[0].args[0][3:5], ["--user", "0"])
         self.assertIn("example.invalid/check:1", docker[0].args[0])
         self.assertEqual(chowns(self.run_container("podman")), [])
         self.assertEqual(chowns(self.run_container("docker", uid=0)), [])
