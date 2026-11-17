@@ -26,6 +26,12 @@ class InnerloopTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="innerloop-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        cache = tempfile.TemporaryDirectory(prefix="innerloop-cache-")
+        self.addCleanup(cache.cleanup)
+        environ = patch.dict(os.environ, XDG_CACHE_HOME=cache.name)
+        environ.start()
+        self.addCleanup(environ.stop)
+        self.cache = MODULE["cache_dir"](self.root)
         self.pipeline = self.root / "pipeline.yaml"
         self.write_source(
             [{"name": "check", "image": "example.invalid/check:1", "script": "exit 0"}]
@@ -463,6 +469,19 @@ class InnerloopTests(unittest.TestCase):
         proposed["steps"][0].pop("script")
         return proposed
 
+    def test_model_thinking_suffix_replaces_thinking_off(self):
+        tests = [
+            ("haiku", ["--thinking", "off"]),
+            ("github-copilot/claude-sonnet-5.5:minimal", []),
+        ]
+        for model, thinking in tests:
+            with self.subTest(model=model):
+                cmd = MODULE["pi_command"]("prompt", model)
+                index = cmd.index("--model")
+                self.assertEqual(cmd[index - len(thinking):index], thinking)
+                self.assertEqual(cmd.count("--thinking"), len(thinking) // 2)
+                self.assertEqual(cmd[index + 1], model)
+
     def test_malformed_answer_is_retried_with_the_error(self):
         rejected = MODULE["PlanRejected"]("Agent returned invalid plan JSON")
         agent = Mock(side_effect=[rejected, self.good_proposal()])
@@ -599,11 +618,11 @@ class InnerloopTests(unittest.TestCase):
             result = MODULE["ensure_plan"](args, self.root, self.pipeline, scope)
         return result, built
 
-    def test_plan_is_cached_in_a_self_ignoring_folder_and_reused(self):
+    def test_plan_is_cached_outside_the_working_tree_and_reused(self):
         (path, _), built = self.cached()
         self.assertEqual(built.call_count, 1)
-        self.assertEqual(path.parent.name, ".tekton-innerloop")
-        self.assertEqual((path.parent / ".gitignore").read_text(), "*\n")
+        self.assertEqual(path.parent, self.cache)
+        self.assertFalse(path.is_relative_to(self.root))
         _, built = self.cached()
         self.assertEqual(built.call_count, 0)
 
@@ -723,6 +742,37 @@ class InnerloopTests(unittest.TestCase):
         self.assertIn("checks/c skipped: needs checks/b, which failed", text)
         self.assertIn("checks/e skipped: needs checks/c, which failed", text)
 
+    def test_results_pass_between_steps_outside_the_repository(self):
+        self.multi_step_plan(
+            [
+                ("a", 'mkdir -p "$RESULTS/a" && printf hello > "$RESULTS/a/out"', []),
+                ("b", 'echo "$RESULTS" > "$WORKSPACE/dir"; test "$(cat "$RESULTS/a/out")" = hello', ["a"]),
+            ]
+        )
+        self.assertEqual(self.run_plan(), 0)
+        results = Path((self.root / "dir").read_text().strip())
+        self.assertFalse(results.is_relative_to(self.root))
+        self.assertFalse(results.exists())
+
+    def test_on_error_continue_failures_are_ignored(self):
+        self.multi_step_plan(
+            [("a", "exit 1", []), ("b", 'touch "$WORKSPACE/ran-b"', ["a"])]
+        )
+        image = "example.invalid/check:1"
+        self.write_source(
+            [
+                {"name": "a", "image": image, "script": "exit 1", "onError": "continue"},
+                {"name": "b", "image": image, "script": 'touch "$WORKSPACE/ran-b"'},
+            ]
+        )
+        self.plan["inputs"]["pipeline.yaml"] = MODULE["digest"](self.pipeline)
+        self.plan["steps"][1]["shell"] = "sh"
+        out = io.StringIO()
+        self.assertEqual(self.run_plan(capture=out), 0)
+        self.assertTrue((self.root / "ran-b").exists())
+        self.assertIn("checks/a failed (exit 1), ignored: onError is continue", out.getvalue())
+        self.assertIn("1 failed with onError: continue", out.getvalue())
+
     def run_container(self, runtime, uid=1000, **extra):
         process = Mock(returncode=0)
         run = Mock(return_value=Mock(returncode=0, stdout="sha256:aaa"))
@@ -742,7 +792,7 @@ class InnerloopTests(unittest.TestCase):
         ]
         docker = chowns(self.run_container("docker"))
         self.assertEqual(len(docker), 1)
-        self.assertIn("find /workspace -user 0 -exec chown 1000:1000 {} +", docker[0].args[0])
+        self.assertIn("find /workspace /results -user 0 -exec chown 1000:1000 {} +", docker[0].args[0])
         self.assertIn("example.invalid/check:1", docker[0].args[0])
         self.assertEqual(chowns(self.run_container("podman")), [])
         self.assertEqual(chowns(self.run_container("docker", uid=0)), [])
@@ -770,7 +820,7 @@ class InnerloopTests(unittest.TestCase):
         self.assertNotIn("different image", run_with("sha256:aaa"))
         self.assertNotIn("different image", run_with("sha256:aaa"))
         self.assertIn("different image than last time", run_with("sha256:bbb"))
-        self.assertEqual((self.root / ".tekton-innerloop" / ".gitignore").read_text(), "*\n")
+        self.assertTrue((self.cache / "images.json").is_file())
 
     def test_agent_stream_uses_final_message_and_shows_tool_progress(self):
         events = [
@@ -1195,17 +1245,19 @@ class InnerloopTests(unittest.TestCase):
             with self.fake_tkn_pac(resolver, version), contextlib.redirect_stdout(out):
                 path, extra = MODULE["plan_source"](self.root, self.pipeline)
             self.assertEqual(len(calls.read_text().splitlines()), runs, version)
-        self.assertEqual(path.parent.name, ".tekton-innerloop")
+        self.assertEqual(path.parent, self.cache)
         self.assertEqual(extra, [])
         self.assertIn("-p revision=$HEAD_SHA", calls.read_text())
         sources = MODULE["inventory"](path, self.root)
         plan = MODULE["assemble_plan"](
-            self.good_proposal(), self.root, "pipeline.yaml", sources, ["checks/check"],
-            str(path.relative_to(self.root)),
+            self.good_proposal(), self.root, "pipeline.yaml", sources, ["checks/check"], path.name,
         )
         self.assertIn(plan["resolved"], plan["inputs"])
         self.plan = plan
         self.validate()
+        path.unlink()
+        with self.assertRaisesRegex(ValueError, "resolve output .* is gone"):
+            self.validate()
         with self.fake_tkn_pac("echo boom >&2; exit 1"), contextlib.redirect_stdout(out):
             self.assertEqual(
                 MODULE["plan_source"](self.root, self.pipeline, refresh=True)[0], self.pipeline

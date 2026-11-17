@@ -17,7 +17,7 @@ tkn-innerloop run .tekton/linter.yaml --steps codespell,yamllint
 ```
 
 `run` chooses the local scope, converts when there is no current plan, caches the
-plan in `.tekton-innerloop/` (self-ignoring), and executes it. Exit `0`: passed.
+plan outside the working tree, and executes it. Exit `0`: passed.
 `1`: a check failed. `2`: passed, but some steps were unresolved, so tell the user
 the result is incomplete. It does not stop for review, so read the plan first
 (`generate`, `validate --diff`, below) when the scripts matter. Run it after every
@@ -46,7 +46,8 @@ tkn-innerloop generate .tekton/linter.yaml \
 
 Generation uses `pi` with only `read`, `grep`, `find` and `ls`. It can inspect
 Makefiles, helper scripts and tool configuration. Select its model with
-`--model` or `TKN_INNERLOOP_AI_MODEL` (default: Haiku). The agent receives the
+`--model` or `TKN_INNERLOOP_AI_MODEL` (default: Haiku); a `:minimal` style
+suffix sets pi's thinking level, which is off otherwise. The agent receives the
 requested source inventory directly and inspects only relevant referenced
 helpers/configuration. Startup update checks are disabled. These tools permit repository discovery;
 they do not constitute a filesystem sandbox.
@@ -97,7 +98,9 @@ including any setup commands in those scripts.
 origin's default branch, else `main`, else `master` (`--base` overrides). Declare any changed-file selection changes explicitly,
 including coverage of staged, unstaged and untracked files. Environment values
 and working directories support literal text plus `$WORKSPACE`, `$BASE_SHA`,
-`$BASE_REF`, `$HEAD_SHA` and `$HEAD_REF`.
+`$BASE_REF`, `$HEAD_SHA`, `$HEAD_REF` and `$RESULTS`. Task results go to
+`$RESULTS/<task>/<name>`, a run-scoped directory outside the checkout, and
+consumers read them from there.
 Secrets stay outside the plan: list names in `required_env` (the run is blocked
 without them) or, when a step still works without the value, in `optional_env`,
 and forward them explicitly with `--env NAME`. Do not fetch credentials automatically.

@@ -8,6 +8,6 @@ tasks, a finally task, and a privileged docker-in-docker sidecar.
 
 The shared Tasks are inlined and recorded in defined_in. check-name and
 check-files-changed can run locally once their result paths and GitHub command
-parameters are bound. e2e-tests/kind needs the dind sidecar, which is never
-started locally, so the model should leave it unresolved even though the
-automatic scope keeps it.
+parameters are bound. e2e-tests/kind has only args, so it runs the
+image entrypoint, and it needs the dind sidecar, which is never started locally.
+The automatic scope leaves it on the cluster.

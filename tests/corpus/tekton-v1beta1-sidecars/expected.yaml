@@ -25,7 +25,7 @@ scope:
   - check-name-matches/check-name
   - check-git-files-changed/check-files-changed
   - e2e-tests/make-artifacts-folder
-  - e2e-tests/kind
   cluster:
     clone-repo/task: external reference
+    e2e-tests/kind: runs the image entrypoint
     upload-logs/task: runs after the pipeline

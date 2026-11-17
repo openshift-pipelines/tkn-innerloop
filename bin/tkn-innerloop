@@ -29,7 +29,7 @@ SUBSTITUTION = re.compile(
 )
 TEKTON_UNBOUND = re.compile(r"\$\((?:workspaces|params|context|steps|tasks|results)\.")
 PAC_UNBOUND = re.compile(r"\{\{")
-RUNNER_VARS = ("WORKSPACE", "BASE_SHA", "HEAD_SHA", "HEAD_REF", "BASE_REF")
+RUNNER_VARS = ("WORKSPACE", "BASE_SHA", "HEAD_SHA", "HEAD_REF", "BASE_REF", "RESULTS")
 PAC_ANNOTATION = "pipelinesascode.tekton.dev/"
 # PaC placeholders with a local equivalent; the runner supplies these shell variables.
 PAC_BINDINGS = {
@@ -41,8 +41,10 @@ PAC_BINDINGS = {
 PAC_BOUND = re.compile(r"\{\{\s*(" + "|".join(PAC_BINDINGS) + r")\s*\}\}")
 DEFINITION_KIND = re.compile(r"^kind:\s*['\"]?(?:Pipeline|Task|StepAction)['\"]?\s*$", re.MULTILINE)
 ENTRY_KIND = re.compile(r"^kind:\s*['\"]?(?:PipelineRun|Pipeline)['\"]?\s*$", re.MULTILINE)
+# Bare names are looked up on the image PATH (the bash image keeps it in /usr/local/bin).
+SHELLS = ("sh", "bash", "/bin/sh", "/bin/bash")
+THINKING_SUFFIX = re.compile(r":(?:off|minimal|low|medium|high|xhigh|max)$")
 UNRESOLVED_IMAGE = re.compile(r"\$|\{\{")
-CACHE_DIR = ".tekton-innerloop"
 CONFIG_FILE = ".tekton-innerloop.yaml"
 
 
@@ -139,12 +141,33 @@ def default_base(root: Path) -> str:
     raise ValueError("Cannot tell the PR target branch; pass --base REF")
 
 
+def cache_dir(root: Path) -> Path:
+    """Per-checkout state, kept out of the working tree so repository-wide tools never see it."""
+    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    key = hashlib.sha256(str(root.resolve()).encode()).hexdigest()[:12]
+    return base / "tkn-innerloop" / f"{root.name}-{key}"
+
+
+def home_relative(path: Path) -> str:
+    return f"~/{path.relative_to(Path.home())}" if path.is_relative_to(Path.home()) else str(path)
+
+
 def source_path(root: Path, relative: str) -> Path:
     if not isinstance(relative, str) or Path(relative).is_absolute():
         raise ValueError(f"Input must be repository-relative: {relative}")
     path = (root / relative).resolve()
     if not path.is_relative_to(root) or not path.is_file():
         raise ValueError(f"Input must be a file inside the repository: {relative}")
+    return path
+
+
+def plan_input(root: Path, name: str, resolved: str | None) -> Path:
+    """A plan input: a repository file, or the plan's tkn pac resolve output in the cache."""
+    if name != resolved:
+        return source_path(root, name)
+    path = cache_dir(root) / name
+    if "/" in name or not path.is_file():
+        raise ValueError(f"Stale plan: the tkn pac resolve output {name} is gone; regenerate the plan")
     return path
 
 
@@ -217,7 +240,6 @@ def repo_yaml_files(root: Path) -> list[str]:
         name
         for name in listed
         if name.endswith((".yaml", ".yml"))
-        and Path(name).parts[0] != CACHE_DIR
         and (root / name).is_file()
     )
 
@@ -564,7 +586,8 @@ def select_steps(steps: list[dict], selection: str | None) -> list[dict]:
 
 def plan_sources(plan: dict, root: Path) -> dict[str, dict]:
     """The steps a plan was built from: its tkn pac resolve output, or the pipeline itself."""
-    return inventory(source_path(root, plan.get("resolved") or plan["pipeline"]), root)
+    resolved = plan.get("resolved")
+    return inventory(plan_input(root, resolved or plan["pipeline"], resolved), root)
 
 
 def validate_plan(plan: dict, root: Path) -> dict:
@@ -575,12 +598,12 @@ def validate_plan(plan: dict, root: Path) -> dict:
         raise TypeError("Plan needs a repository-relative pipeline path")
     resolved = plan.get("resolved")
     if resolved is not None and not isinstance(resolved, str):
-        raise TypeError("Plan resolved source must be a repository-relative path")
+        raise TypeError("Plan resolved source must be a cache file name")
     inputs = plan.get("inputs")
     if not isinstance(inputs, dict) or pipeline not in inputs or (resolved and resolved not in inputs):
         raise ValueError("Plan inputs must include the pipeline and its SHA-256")
     for name, expected in inputs.items():
-        if digest(source_path(root, name)) != expected:
+        if digest(plan_input(root, name, resolved)) != expected:
             raise ValueError(f"Stale plan: {name} changed; regenerate the plan")
     sources = plan_sources(plan, root)
     missing = definition_files(sources) - set(inputs)
@@ -639,7 +662,7 @@ def validate_plan(plan: dict, root: Path) -> dict:
         for field in ("script", "working_dir", "shell"):
             if not isinstance(step.get(field), str) or not step[field].strip():
                 raise ValueError(f"{key}: runnable step needs {field}")
-        if step["shell"] not in ("/bin/sh", "/bin/bash"):
+        if step["shell"] not in SHELLS:
             raise ValueError(f"{key}: unsupported shell; mark the step unresolved")
         if not isinstance(step.get("adaptations"), list) or not all(
             isinstance(item, str) for item in step["adaptations"]
@@ -895,7 +918,7 @@ which is full of both. Put nothing after the closing brace.
 
 Schema: {"inputs": ["relative/path/to/every/helper/or/config/you/consulted"],
 "steps": [{"id": "task/step", "decision": "run|skip|unresolved", "reason": "why",
-"image": "exact source image", "shell": "/bin/sh or /bin/bash",
+"image": "exact source image", "shell": "sh or bash",
 "working_dir": "$WORKSPACE", "env": {}, "required_env": [], "optional_env": [],
 "depends_on": [], "edits": [{"old": "exact source fragment", "new": "replacement", "reason": "why"}],
 "adaptations": ["every semantic change"]}]}.
@@ -913,9 +936,8 @@ combination: loop over every combination in a script edit or leave its steps
 unresolved; never run a single default combination. Evaluate task_context.when
 with the PipelineRun parameter values and defaults: skip a step whose condition
 is false, leave it unresolved when the condition needs task results or event
-data you cannot know. A failed local step fails the run and skips its
-dependents, while Tekton ignores failures under onError: continue, so record
-that as an adaptation. Sidecars in task_defaults are not started locally: leave
+data you cannot know. The runner ignores failures of steps under onError:
+continue, at task or step level, as Tekton does, so run them unchanged. Sidecars in task_defaults are not started locally: leave
 steps that need them unresolved. Do not flatten cross-PipelineRun dependencies
 or result bindings into independent checks. Account for them explicitly or leave
 affected steps unresolved.
@@ -934,9 +956,15 @@ source files being tested. Do not list directories or nonexistent paths in input
 Keep unit test code out of inputs so editing it permits reuse.
 WORKSPACE is the worktree root (container: /workspace). BASE_SHA is computed at
 execution with git merge-base HEAD <base-ref>. The runner also supplies HEAD_SHA,
-HEAD_REF (current branch) and BASE_REF (base branch name). WORKSPACE, BASE_SHA,
-HEAD_SHA, HEAD_REF and BASE_REF are supplied automatically: never
-put any of them in env or required_env. The default base ref is main; it is chosen at
+HEAD_REF (current branch), BASE_REF (base branch name) and RESULTS, an empty
+directory outside the repository shared by every step of one run. WORKSPACE,
+BASE_SHA, HEAD_SHA, HEAD_REF, BASE_REF and RESULTS are supplied automatically: never
+put any of them in env or required_env.
+Task results go through RESULTS, never into WORKSPACE: in the producing step
+replace $(results.NAME.path) with "$RESULTS/<pipeline task>/NAME" and create that
+directory first; in a consumer, read $(tasks.T.results.NAME) with
+"$(cat "$RESULTS/T/NAME")" in a script edit and list the producing step in
+depends_on. The default base ref is main; it is chosen at
 execution, so a missing ref during conversion does not make a step unresolved.
 Document that adaptation. Include uncommitted/untracked
 files in changed-file checks and document changed file-selection semantics.
@@ -1005,8 +1033,8 @@ def pi_command(prompt: str, model: str) -> list[str]:
         "--offline",
         "--tools",
         "read,grep,find,ls",
-        "--thinking",
-        "off",
+        # A model:level suffix picks the thinking level; some models reject "off".
+        *([] if THINKING_SUFFIX.search(model) else ["--thinking", "off"]),
         "--model",
         model,
         "--",
@@ -1033,6 +1061,7 @@ def assemble_plan(
         names = [
             str(Path(name).relative_to(root)) if Path(name).is_absolute() else name
             for name in names
+            if not Path(name).is_relative_to(cache_dir(root))
         ]
         known = {relative, *extra_inputs, *definition_files(sources), *names}
         if resolved:
@@ -1042,7 +1071,7 @@ def assemble_plan(
             "pipeline": relative,
             **({"resolved": resolved} if resolved else {}),
             "inputs": {
-                name: digest(source_path(root, name)) for name in sorted(known)
+                name: digest(plan_input(root, name, resolved)) for name in sorted(known)
             },
             "steps": proposed.get("steps"),
         }
@@ -1093,7 +1122,7 @@ def build_plan(
         raise ValueError("Install the pi coding agent to generate a plan")
     relative = str(path.relative_to(root))
     source = source or path
-    resolved = str(source.relative_to(root)) if source != path else None
+    resolved = source.name if source != path else None
     sources = inventory(source, root)
     pac = pac_profile([s["pipeline_context"] for s in sources.values()])
     prompt = plan_prompt(relative, sources, selected_ids, pac)
@@ -1169,7 +1198,9 @@ def expand(value: str, bindings: dict[str, str]) -> str:
     )
 
 
-def runner_bindings(root: Path, steps: list[dict], workspace: str, base: str | None) -> dict[str, str]:
+def runner_bindings(
+    root: Path, steps: list[dict], workspace: str, base: str | None, results: str = ""
+) -> dict[str, str]:
     """Values for the runner variables, computed only when a selected step uses them."""
     used = json.dumps([[s["script"], s["working_dir"], s["env"]] for s in steps])
 
@@ -1178,6 +1209,7 @@ def runner_bindings(root: Path, steps: list[dict], workspace: str, base: str | N
 
     bindings = dict.fromkeys(RUNNER_VARS, "")
     bindings["WORKSPACE"] = workspace
+    bindings["RESULTS"] = results
     if wanted("BASE_SHA") or wanted("BASE_REF"):
         base = base or default_base(root)
         if wanted("BASE_SHA"):
@@ -1226,7 +1258,7 @@ def report_blocked(plan: dict, unresolved: list[dict], args: argparse.Namespace)
     return 1
 
 
-def hand_back_ownership(runtime: str, root: Path, step: dict) -> None:
+def hand_back_ownership(runtime: str, root: Path, step: dict, results: Path) -> None:
     """Docker's daemon runs as root, so a step can leave root-owned files in the checkout.
 
     Give them back to the invoking user, using the step's own image. Rootless podman
@@ -1238,9 +1270,9 @@ def hand_back_ownership(runtime: str, root: Path, step: dict) -> None:
     try:
         subprocess.run(
             [
-                runtime, "run", "--rm", "-v", f"{root}:/workspace:Z",
+                runtime, "run", "--rm", "-v", f"{root}:/workspace:Z", "-v", f"{results}:/results:Z",
                 "--entrypoint", step["shell"], step["image"], "-c",
-                f"find /workspace -user 0 -exec chown {uid}:{gid} {{}} +",
+                f"find /workspace /results -user 0 -exec chown {uid}:{gid} {{}} +",
             ],
             check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120,
         )
@@ -1260,7 +1292,7 @@ def note_image_drift(runtime: str, root: Path, image: str) -> None:
     current = result.stdout.strip() if isinstance(result.stdout, str) else ""
     if result.returncode or not current:
         return
-    state = root / CACHE_DIR / "images.json"
+    state = cache_dir(root) / "images.json"
     try:
         known = json.loads(state.read_text())
     except (OSError, json.JSONDecodeError):
@@ -1272,12 +1304,22 @@ def note_image_drift(runtime: str, root: Path, image: str) -> None:
         )
     if known.get(image) != current:
         known[image] = current
-        state.parent.mkdir(exist_ok=True)
-        (state.parent / ".gitignore").write_text("*\n")
+        state.parent.mkdir(parents=True, exist_ok=True)
         state.write_text(json.dumps(known, indent=2) + "\n")
 
 
+def continues_on_error(source: dict) -> bool:
+    """Tekton ignores a failure when the step or its pipeline task sets onError: continue."""
+    return "continue" in (source["step"].get("onError"), source["task_context"].get("onError"))
+
+
 def run_plan(args: argparse.Namespace) -> int:
+    """Run a plan's checks with a fresh $RESULTS directory, removed afterwards."""
+    with tempfile.TemporaryDirectory(prefix="tkn-innerloop-results-", ignore_cleanup_errors=True) as results:
+        return run_checks(args, Path(results))
+
+
+def run_checks(args: argparse.Namespace, results: Path) -> int:
     root = repo_root(Path(args.repo))
     plan = load_plan(Path(args.plan), root)
     scope = select_steps(plan["steps"], args.steps)
@@ -1313,8 +1355,10 @@ def run_plan(args: argparse.Namespace) -> int:
     if forwarded - required - optional:
         raise ValueError("Only required_env or optional_env variables may be forwarded")
     sources = plan_sources(plan, root)
-    workspace = str(root) if args.runtime == "host" else "/workspace"
-    bindings = runner_bindings(root, steps, workspace, args.base)
+    host = args.runtime == "host"
+    bindings = runner_bindings(
+        root, steps, str(root) if host else "/workspace", args.base, str(results) if host else "/results"
+    )
     if args.runtime == "host":
         print(
             "Host mode uses local tool versions and has access to your host environment.",
@@ -1326,6 +1370,7 @@ def run_plan(args: argparse.Namespace) -> int:
     )
     passed = 0
     failed: list[str] = []
+    ignored: list[str] = []
     not_run: list[str] = []
     for index, step in enumerate(steps, 1):
         broken = [name for name in step["depends_on"] if name in failed or name in not_run]
@@ -1373,6 +1418,8 @@ def run_plan(args: argparse.Namespace) -> int:
                 "-i",
                 "-v",
                 f"{root}:/workspace:Z",
+                "-v",
+                f"{results}:/results:Z",
                 "-w",
                 working_dir,
             ]
@@ -1426,7 +1473,7 @@ def run_plan(args: argparse.Namespace) -> int:
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.communicate()
-            hand_back_ownership(args.runtime, root, step)
+            hand_back_ownership(args.runtime, root, step, results)
             if isinstance(stopped, KeyboardInterrupt):
                 print(
                     style(f"  ✗ {step['id']}: interrupted", "1;31", sys.stderr),
@@ -1439,9 +1486,19 @@ def run_plan(args: argparse.Namespace) -> int:
             )
             failed.append(step["id"])
             continue
-        hand_back_ownership(args.runtime, root, step)
+        hand_back_ownership(args.runtime, root, step, results)
         if args.runtime != "host":
             note_image_drift(args.runtime, root, step["image"])
+        if proc.returncode and continues_on_error(sources[step["id"]]):
+            print(
+                style(
+                    f"\n  ! {step['id']} failed (exit {proc.returncode}), ignored: onError is continue",
+                    "33",
+                ),
+                flush=True,
+            )
+            ignored.append(step["id"])
+            continue
         if proc.returncode:
             print(
                 style(
@@ -1479,7 +1536,8 @@ def run_plan(args: argparse.Namespace) -> int:
     )
     print(
         style(
-            f"  {skipped} skipped · {unknown} unresolved · cluster CI still required\n",
+            (f"  {len(ignored)} failed with onError: continue · " if ignored else "  ")
+            + f"{skipped} skipped · {unknown} unresolved · cluster CI still required\n",
             "2",
         )
     )
@@ -1540,6 +1598,8 @@ def auto_scope(
             left[key] = "external reference"
         elif UNRESOLVED_IMAGE.search(step["image"]):
             left[key] = "image has an unresolved substitution"
+        elif step.get("script") is None and not step.get("command"):
+            left[key] = "runs the image entrypoint"
         elif "(skip-local)" in hints:
             left[key] = "marked skip-local"
         elif any(pattern.search(text) for pattern in patterns):
@@ -1632,7 +1692,7 @@ def cache_path(root: Path, pipeline: Path, explicit: list[str] | None = None) ->
     name = cache_name(root, pipeline)
     if explicit:
         name += "." + hashlib.sha256(",".join(explicit).encode()).hexdigest()[:8]
-    return root / CACHE_DIR / f"{name}.plan.json"
+    return cache_dir(root) / f"{name}.plan.json"
 
 
 def stage(label: str, detail: str, color: str = "32", mark: str = "✓") -> None:
@@ -1640,8 +1700,7 @@ def stage(label: str, detail: str, color: str = "32", mark: str = "✓") -> None
 
 
 def write_cache(path: Path, text: str) -> None:
-    path.parent.mkdir(exist_ok=True)
-    (path.parent / ".gitignore").write_text("*\n")
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
 
 
@@ -1690,7 +1749,7 @@ def plan_source(root: Path, pipeline: Path, refresh: bool = False) -> tuple[Path
         cmd += ["-p", f"{name}={value}"]
     key = {"format": RESOLVE_FORMAT, "inputs": inputs, "command": cmd, "tkn-pac": tkn_pac_version(tool)}
     header = f"# tkn-innerloop resolved from: {json.dumps(key, sort_keys=True)}\n"
-    out = root / CACHE_DIR / f"{cache_name(root, pipeline)}.resolved.yaml"
+    out = cache_dir(root) / f"{cache_name(root, pipeline)}.resolved.yaml"
     if out.is_file() and not refresh and out.read_text().startswith(header):
         return out, definitions
     try:
@@ -1705,7 +1764,7 @@ def plan_source(root: Path, pipeline: Path, refresh: bool = False) -> tuple[Path
         stage("Resolve", f"tkn pac resolve failed ({reason}); using local resolution", "33", "!")
         return pipeline, []
     write_cache(out, header + result.stdout)
-    stage("Resolve", f"tkn pac resolve · {out.relative_to(root)}")
+    stage("Resolve", f"tkn pac resolve · {home_relative(out)}")
     return out, definitions
 
 
@@ -1720,8 +1779,8 @@ def ensure_plan(
 ) -> tuple[Path, dict]:
     """The cached plan when it still matches, else a freshly generated one."""
     out = cache_path(root, pipeline, scope if explicit else None)
-    relative = str(out.relative_to(root))
-    resolved = str(source.relative_to(root)) if source and source != pipeline else None
+    relative = home_relative(out)
+    resolved = source.name if source and source != pipeline else None
     reason = "no plan yet"
     if out.exists() and not getattr(args, "refresh", False):
         try:

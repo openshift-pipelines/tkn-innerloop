@@ -5,6 +5,6 @@ steps:
     image: mirror.gcr.io/bash
     step_action: step-action
 scope:
-  local:
-  - run-action/action-runner
-  cluster: {}
+  local: []
+  cluster:
+    run-action/action-runner: runs the image entrypoint

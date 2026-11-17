@@ -5,7 +5,8 @@ From tektoncd/pipeline `examples/v1/pipelineruns/stepaction-params.yaml`; the pi
 A StepAction with string, array and object params, called from a PipelineRun
 that passes its own values.
 
-The step gets the StepAction's image and args. Inside it, `$(params.x)` refers to
-the step's params, then to the StepAction defaults. A good plan renders the args
-with the PipelineRun's values: the array expanded, key2 taken from the
-PipelineRun object and key1 kept at the StepAction default.
+The step gets the StepAction's image, args and params, with `$(params.x)` inside
+it referring to the step's params and then to the StepAction defaults. Since it
+has args and no command or script, it runs the image entrypoint, which a plan
+cannot express. The automatic scope therefore leaves it on the cluster. The
+case covers the inventory: image, params and the step_action record.

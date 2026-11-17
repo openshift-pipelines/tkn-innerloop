@@ -19,7 +19,9 @@ have unresolved requirements. The CLI handles validation and execution.
 
 Install Python 3.10+, PyYAML, the [pi coding agent](https://github.com/earendil-works/pi),
 and Docker or Podman. Authenticate a provider in pi. Conversion defaults to Haiku;
-use `--model` or `TKN_INNERLOOP_AI_MODEL` to choose another model.
+use `--model` or `TKN_INNERLOOP_AI_MODEL` to choose another model. Thinking is
+off unless the model name ends in a pi level such as
+`github-copilot/claude-sonnet-5.5:minimal`; some models refuse to turn it off.
 
 ```sh
 python3 -m pip install -r requirements.txt
@@ -42,8 +44,9 @@ cluster_only:
 ```
 
 The entries are regular expressions added to the built-in list. The agent decides the rest.
-`--steps` replaces that choice. The plan is cached in `.tekton-innerloop/`, a folder
-that ignores itself, so nothing in your repository changes.
+`--steps` replaces that choice. The plan is cached in
+`${XDG_CACHE_HOME:-~/.cache}/tkn-innerloop/<repo>-<hash>/`, outside the working tree,
+so nothing in your repository changes and repository-wide linters never see it.
 
 **`run` executes agent-edited scripts without a review stop.** To read them first:
 
@@ -93,7 +96,7 @@ handling. `{{ revision }}`, `{{ source_branch }}`, `{{ target_branch }}` and
 `pull_request`; the agent binds other placeholders or leaves the step unresolved.
 When `tkn-pac` is installed, the file first goes through `tkn pac resolve`, which
 also fetches tasks named in `pipelinesascode.tekton.dev/task` annotations. Its
-output is cached in `.tekton-innerloop/` and reused until an input changes or
+output is cached next to the plan and reused until an input changes or
 `--refresh`. If `tkn pac resolve` fails, local resolution takes over with a
 warning. Elsewhere `{{ … }}` is left alone, since Go templates are ordinary script
 text.
@@ -163,7 +166,10 @@ gives files created in your checkout back to you; Podman already writes as you.
 `BASE_SHA` uses `git merge-base HEAD <base>`, where the base is origin's default
 branch, else `main`, else `master` (override with `--base`). `BASE_REF` is that
 branch name without the remote, `HEAD_SHA` and `HEAD_REF` the current commit and
-branch. Each is computed only when a selected step uses it.
+branch. Each is computed only when a selected step uses it. `RESULTS` is an empty
+directory outside the checkout (`/results` in containers), shared by the steps of
+one run and removed afterwards: task results are written there and read by the
+tasks that consume them.
 
 Steps keep running after a failure unless a later step depends on the failed one.
 Exit codes: `0` every selected check passed, `1` a check failed, `2` all passed
