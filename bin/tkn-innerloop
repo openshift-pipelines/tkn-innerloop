@@ -1,0 +1,567 @@
+#!/usr/bin/env python3
+"""
+tkn-innerloop (also callable as `tkn local-agent`):
+Fast Inner-Loop Tekton Validation for Coding Agents.
+
+Extracts inner-loop tasks/steps from `.tekton/*.yaml` PipelineRuns, classifies
+what can run locally vs outer-loop cluster steps, translates Tekton + PaC
+variables, generates Podman/Docker or native host scripts, and runs them with
+exact CI flags.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+# ANSI colors for crisp terminal output
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+CYAN = "\033[36m"
+MAGENTA = "\033[35m"
+BLUE = "\033[34m"
+
+SKILL_PATH = Path(__file__).resolve().parent.parent / "skills" / "tekton-innerloop" / "SKILL.md"
+
+
+@dataclass
+class StepClassification:
+    task_name: str
+    step_name: str
+    display_name: str
+    image: str
+    category: str  # "inner-loop", "inner-loop-adapted", "outer-loop"
+    reason: str
+    secrets: list[str] = field(default_factory=list)
+    script: str = ""
+    adapted_script: str = ""
+    local_tools: list[str] = field(default_factory=list)
+
+
+def detect_git_root(start: Path) -> Path:
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(start),
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return Path(out)
+    except Exception:
+        return start.resolve()
+
+
+def detect_base_sha(repo_root: Path) -> str:
+    for candidate in ["HEAD~1", "main", "origin/main"]:
+        try:
+            sha = subprocess.check_output(
+                ["git", "rev-parse", candidate],
+                cwd=str(repo_root),
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+            if sha:
+                return sha
+        except Exception:
+            continue
+    return ""
+
+
+def adapt_script_for_host(step_name: str, script: str, repo_root: Path, base_sha: str) -> tuple[str, list[str], str]:
+    """
+    Translates a Tekton/PaC step script into an exact local inner-loop script,
+    replacing $(workspaces.source.path) and PaC {{ ... }} templates, and adapting
+    container-only curl/pip bootstrap lines when the binary is already installed.
+    """
+    s = script
+    s = s.replace("$(workspaces.source.path)", str(repo_root))
+    s = re.sub(r"\{\{\s*headers\['X-Github-Event'\]\s*\}\}", "pull_request", s)
+    s = re.sub(r"\{\{\s*body\.pull_request\.user\.login\s*\}\}", "developer", s)
+    s = re.sub(r"\{\{\s*body\.pull_request\.base\.sha\s*\}\}", base_sha, s)
+    s = re.sub(r"\{\{\s*pull_request_number\s*\}\}", "42", s)
+
+    lines = s.splitlines()
+    cleaned_lines: list[str] = []
+    tools_used: list[str] = []
+    adaptation_note = ""
+
+    skip_next_fi = False
+    for line in lines:
+        stripped = line.strip()
+        # Never mutate global git config on the developer's host machine
+        if stripped.startswith("git config --global"):
+            continue
+        # Skip container pip3 install if tool is already on host PATH
+        m_pip = re.match(r"^(?:if\s+!\s+)?pip3\s+install\s+([a-zA-Z0-9_-]+)", stripped)
+        if m_pip:
+            pkg = m_pip.group(1)
+            if shutil.which(pkg):
+                tools_used.append(pkg)
+                if stripped.startswith("if ! pip3 install"):
+                    skip_next_fi = True
+                continue
+        if skip_next_fi:
+            if stripped == "fi":
+                skip_next_fi = False
+            continue
+
+        # Adapt container curl downloads to /usr/bin or /tmp when tool is on host
+        if any(
+            pat in stripped
+            for pat in [
+                "api.github.com/repos/errata-ai/vale",
+                "releases/download/${version}/vale_",
+                "api.github.com/repos/goreleaser/goreleaser",
+                "api.github.com/repos/${repo}/releases/latest",
+                "releases/download/${version}/${project}_Linux",
+                "github.com/mikefarah/yq/releases/download",
+                "dl.k8s.io/release/",
+                "chmod +x /usr/bin/yq",
+                "chmod +x /usr/bin/kubectl",
+            ]
+        ):
+            continue
+
+        line = line.replace("/tmp/vale ", "vale ")
+        line = line.replace("/tmp/goreleaser ", "goreleaser ")
+        if 'git diff --name-only "${base_sha}..HEAD" -- \'*.go\'' in line:
+            line = line.replace(
+                'git diff --name-only "${base_sha}..HEAD" -- \'*.go\'',
+                '{ git diff --name-only "${base_sha}" -- \'*.go\'; git ls-files --others --exclude-standard -- \'*.go\'; } | sort -u',
+            )
+        if "find . -type f -regex \".*md\"" in line and "git ls-files" not in line:
+            line = "markdownlint $(git ls-files --cached --others --exclude-standard '*.md' | sed 's|^|./|' | grep -Ev '^\\./(vendor|docs/themes|docs/layouts|\\.vale)/')"
+        if "find . -type f -regex \".*y[a]ml\"" in line and "git ls-files" not in line:
+            line = "yamllint -f parsable -c .yamllint $(git ls-files --cached --others --exclude-standard '*.yaml' | sed 's|^|./|')"
+        cleaned_lines.append(line)
+
+    # Detect primary tool binaries referenced
+    for candidate in [
+        "codespell",
+        "shellcheck",
+        "gitlint",
+        "yamllint",
+        "ruff",
+        "markdownlint",
+        "vale",
+        "goreleaser",
+        "yq",
+        "kubectl",
+        "golangci-lint",
+        "gotestsum",
+        "make",
+    ]:
+        if re.search(rf"\b{re.escape(candidate)}\b", "\n".join(cleaned_lines)):
+            if candidate not in tools_used:
+                tools_used.append(candidate)
+
+    if step_name in ("vale", "goreleaser-check", "check-generated-schemas"):
+        adaptation_note = "substituted container GitHub-release curl + HUB_TOKEN with local binary"
+
+    return "\n".join(cleaned_lines).strip() + "\n", tools_used, adaptation_note
+
+
+def classify_step(
+    task_name: str,
+    step: dict[str, Any],
+    repo_root: Path,
+    base_sha: str,
+    pipeline_annotations: dict[str, str],
+) -> StepClassification:
+    step_name = step.get("name", "unnamed")
+    display_name = step.get("displayName") or step.get("description") or step_name
+    image = step.get("image", "")
+    script = step.get("script", "")
+
+    # Gather secret references
+    secrets: list[str] = []
+    for env_item in step.get("env", []) or []:
+        val_from = env_item.get("valueFrom", {})
+        if "secretKeyRef" in val_from:
+            sec_name = val_from["secretKeyRef"].get("name", "")
+            env_name = env_item.get("name", "")
+            secrets.append(f"{env_name}<-{sec_name}")
+
+    # 1. Explicit markers in displayName / description (as discussed in meeting)
+    lower_desc = display_name.lower()
+    if "(skip-local)" in lower_desc or "skip-local" in step_name:
+        return StepClassification(
+            task_name=task_name,
+            step_name=step_name,
+            display_name=display_name,
+            image=image or "stepaction",
+            category="outer-loop",
+            reason="Explicit (skip-local) marker in step description",
+            secrets=secrets,
+        )
+
+    # 2. StepAction / remote ref (git-clone, cache-fetch, cache-upload)
+    if "ref" in step:
+        ref_name = step["ref"].get("resolver", "ref")
+        for p in step["ref"].get("params", []):
+            if p.get("name") in ("name", "url"):
+                ref_name = p.get("value", ref_name).split("/")[-1]
+        reason = "Source already present in local git worktree" if "git-clone" in str(step["ref"]) else f"Cluster StepAction ({ref_name})"
+        return StepClassification(
+            task_name=task_name,
+            step_name=step_name,
+            display_name=display_name,
+            image=f"ref:{ref_name}",
+            category="outer-loop",
+            reason=reason,
+            secrets=secrets,
+        )
+
+    # 3. Outer-loop deployment / status-posting / git-push steps
+    if any(
+        kw in script
+        for kw in [
+            "wrangler@",
+            "pages deploy",
+            "api.github.com/repos/{{repo_owner}}/{{repo_name}}/statuses",
+            "git push --force",
+        ]
+    ):
+        return StepClassification(
+            task_name=task_name,
+            step_name=step_name,
+            display_name=display_name,
+            image=image,
+            category="outer-loop",
+            reason="Outer-loop deployment / GitHub status / git push",
+            secrets=secrets,
+        )
+
+    adapted, tools, note = adapt_script_for_host(step_name, script, repo_root, base_sha)
+
+    # 4. Check if step requires root container writes (/usr/bin/) or a secret + tool not on host
+    if "chmod +x /usr/bin/" in script or ("zizmor" in step_name and not shutil.which("zizmor") and secrets):
+        reason = (
+            "Writes to /usr/bin + regenerates cluster OpenAPI schemas (run in container)"
+            if "chmod +x /usr/bin/" in script
+            else "Requires cluster secret (HUB_TOKEN) to fetch zizmor binary (not installed on host)"
+        )
+        return StepClassification(
+            task_name=task_name,
+            step_name=step_name,
+            display_name=display_name,
+            image=image,
+            category="outer-loop",
+            reason=reason,
+            secrets=secrets,
+            script=script,
+            adapted_script=adapted,
+            local_tools=tools,
+        )
+
+    if secrets and note:
+        return StepClassification(
+            task_name=task_name,
+            step_name=step_name,
+            display_name=display_name,
+            image=image,
+            category="inner-loop-adapted",
+            reason=f"Inner-loop check ({note})",
+            secrets=secrets,
+            script=script,
+            adapted_script=adapted,
+            local_tools=tools,
+        )
+
+    reason = "Deterministic inner-loop check (exact CI flags)"
+    if "{{ body.pull_request" in script or "{{ headers[" in script:
+        reason = "Inner-loop PR check (PaC event templates bound to local git range)"
+
+    return StepClassification(
+        task_name=task_name,
+        step_name=step_name,
+        display_name=display_name,
+        image=image,
+        category="inner-loop",
+        reason=reason,
+        secrets=secrets,
+        script=script,
+        adapted_script=adapted,
+        local_tools=tools,
+    )
+
+
+def parse_pipeline_file(path: Path) -> tuple[str, dict[str, str], list[StepClassification], Path, str]:
+    raw = yaml.safe_load(path.read_text())
+    pr_name = raw.get("metadata", {}).get("name", path.stem)
+    annotations = raw.get("metadata", {}).get("annotations", {}) or {}
+    repo_root = detect_git_root(path.parent)
+    base_sha = detect_base_sha(repo_root)
+
+    tasks = raw.get("spec", {}).get("pipelineSpec", {}).get("tasks", [])
+    classifications: list[StepClassification] = []
+
+    for task in tasks:
+        t_name = task.get("name", "task")
+        if "taskRef" in task and "taskSpec" not in task:
+            ref_name = task["taskRef"].get("name", "taskRef")
+            classifications.append(
+                StepClassification(
+                    task_name=t_name,
+                    step_name=t_name,
+                    display_name=f"TaskRef: {ref_name}",
+                    image=f"taskRef:{ref_name}",
+                    category="outer-loop",
+                    reason="External cluster TaskRef (git-clone / goreleaser)",
+                )
+            )
+            continue
+
+        steps = task.get("taskSpec", {}).get("steps", [])
+        for step in steps:
+            classifications.append(
+                classify_step(t_name, step, repo_root, base_sha, annotations)
+            )
+
+    return pr_name, annotations, classifications, repo_root, base_sha
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    path = Path(args.file)
+    pr_name, annotations, steps, repo_root, base_sha = parse_pipeline_file(path)
+
+    on_event = annotations.get("pipelinesascode.tekton.dev/on-event", "N/A")
+    print(f"{BOLD}{CYAN}╭─ Tekton Inner-Loop Analyzer ─────────────────────────────────────────╮{RESET}")
+    print(f"{BOLD}{CYAN}│{RESET} PipelineRun : {BOLD}{pr_name}{RESET} ({path})")
+    print(f"{BOLD}{CYAN}│{RESET} PaC Trigger : {YELLOW}{on_event}{RESET}  |  Base: {DIM}{base_sha[:8]}{RESET}")
+    print(f"{BOLD}{CYAN}╰──────────────────────────────────────────────────────────────────────╯{RESET}")
+
+    inner = [s for s in steps if s.category.startswith("inner-loop")]
+    outer = [s for s in steps if s.category == "outer-loop"]
+
+    print(f"{BOLD}{'STEP':<24} {'DECISION':<15} {'WHY'}{RESET}")
+    print("─" * 82)
+    for s in steps:
+        if s.category == "inner-loop":
+            badge = f"{GREEN}✔ RUN LOCAL{RESET}   "
+        elif s.category == "inner-loop-adapted":
+            badge = f"{YELLOW}⚡ ADAPT LOCAL{RESET} "
+        else:
+            badge = f"{DIM}⏭ SKIP OUTER{RESET}  "
+        short_reason = s.reason
+        if len(short_reason) > 42:
+            short_reason = short_reason[:39] + "..."
+        print(f"{BOLD}{s.step_name:<24}{RESET} {badge} {short_reason}")
+
+    pct = int(round(100.0 * len(inner) / max(len(steps), 1)))
+    print("─" * 82)
+    print(
+        f"{BOLD}Result:{RESET} {GREEN}{len(inner)}/{len(steps)} steps ({pct}%) runnable locally{RESET} "
+        f"| {DIM}{len(outer)} cluster-only skipped{RESET}"
+    )
+    return 0
+
+
+def generate_runner_script(
+    pr_name: str,
+    steps: list[StepClassification],
+    repo_root: Path,
+    runtime: str,
+    selected_steps: set[str] | None = None,
+) -> str:
+    inner = [
+        s
+        for s in steps
+        if s.category.startswith("inner-loop")
+        and (not selected_steps or s.step_name in selected_steps)
+    ]
+
+    lines = [
+        "#!/usr/bin/env bash",
+        f"# Auto-generated by tkn-innerloop from PipelineRun '{pr_name}'",
+        f"# Runtime mode: {runtime} | Worktree: {repo_root}",
+        "set -euo pipefail",
+        "",
+        f'WORKSPACE="{repo_root}"',
+        'cd "$WORKSPACE"',
+        "",
+    ]
+
+    for s in inner:
+        lines.append(f"# ─── Step: {s.step_name} ({s.display_name}) ───")
+        lines.append(f"# Original Tekton image: {s.image}")
+        if runtime in ("podman", "docker"):
+            lines.append(f'echo "▶ [{s.step_name}] Running in {runtime} ({s.image})..."')
+            lines.append(f'{runtime} run --rm -v "$WORKSPACE:/workspace:Z" -w /workspace {s.image} bash -s <<\'EOF_STEP\'')
+            lines.append(s.adapted_script.rstrip())
+            lines.append("EOF_STEP")
+        else:
+            lines.append(f'echo "▶ [{s.step_name}] {s.display_name}"')
+            lines.append("(\n" + s.adapted_script.rstrip() + "\n)")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def cmd_generate(args: argparse.Namespace) -> int:
+    path = Path(args.file)
+    pr_name, _, steps, repo_root, _ = parse_pipeline_file(path)
+    selected = set(args.steps.split(",")) if args.steps else None
+    script_text = generate_runner_script(pr_name, steps, repo_root, args.runtime, selected)
+
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(script_text)
+        out_path.chmod(0o755)
+        print(f"{GREEN}✔ Generated local inner-loop script:{RESET} {BOLD}{out_path}{RESET} (runtime={args.runtime})")
+    else:
+        print(script_text)
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    path = Path(args.file)
+    pr_name, _, steps, repo_root, base_sha = parse_pipeline_file(path)
+    selected = [x.strip() for x in args.steps.split(",") if x.strip()] if args.steps else None
+
+    inner = [
+        s
+        for s in steps
+        if s.category.startswith("inner-loop")
+        and (not selected or s.step_name in selected)
+    ]
+
+    print(
+        f"{BOLD}{MAGENTA}⚡ tkn-innerloop run{RESET} {BOLD}{pr_name}{RESET} "
+        f"{DIM}({len(inner)} inner-loop step(s), runtime={args.runtime}, base={base_sha[:8]}){RESET}\n"
+    )
+
+    total_start = time.monotonic()
+    results: list[tuple[StepClassification, bool, float, str]] = []
+
+    for idx, s in enumerate(inner, 1):
+        print(
+            f"{BOLD}{BLUE}[{idx}/{len(inner)}] ▶ {s.step_name}{RESET} "
+            f"{DIM}— {s.display_name} ({s.image.split('/')[-1]}){RESET}",
+            flush=True,
+        )
+        t0 = time.monotonic()
+        with tempfile.NamedTemporaryFile("w", suffix=f"-{s.step_name}.sh", delete=False) as tf:
+            tf.write("#!/usr/bin/env bash\nset -euo pipefail\n")
+            tf.write(s.adapted_script)
+            tf_path = tf.name
+        os.chmod(tf_path, 0o755)
+
+        try:
+            proc = subprocess.run(
+                ["bash", tf_path],
+                cwd=str(repo_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=args.timeout,
+            )
+            elapsed = time.monotonic() - t0
+            ok = proc.returncode == 0
+            output = proc.stdout.strip()
+            results.append((s, ok, elapsed, output))
+
+            if ok:
+                print(f"      {GREEN}✔ PASS{RESET} {DIM}({elapsed:.2f}s){RESET}")
+                if args.verbose and output:
+                    for line in output.splitlines()[-5:]:
+                        print(f"        {DIM}{line}{RESET}")
+            else:
+                print(f"      {RED}✘ FAIL{RESET} {DIM}({elapsed:.2f}s){RESET}")
+                for line in output.splitlines()[-15:]:
+                    print(f"        {RED}│{RESET} {line}")
+                if args.fail_fast:
+                    break
+        finally:
+            Path(tf_path).unlink(missing_ok=True)
+
+    total_elapsed = time.monotonic() - total_start
+    passed = sum(1 for _, ok, _, _ in results if ok)
+    failed = len(results) - passed
+
+    print("\n" + "─" * 78)
+    if failed == 0:
+        print(
+            f"{BOLD}{GREEN}✔ INNER LOOP GREEN:{RESET} {passed}/{len(results)} Tekton steps passed locally in "
+            f"{BOLD}{total_elapsed:.2f}s{RESET} {DIM}(vs ~4m30s on cluster CI){RESET}"
+        )
+        return 0
+    else:
+        print(
+            f"{BOLD}{RED}✘ INNER LOOP FAILED:{RESET} {failed} failed, {passed} passed in "
+            f"{BOLD}{total_elapsed:.2f}s{RESET} — caught locally before git push!"
+        )
+        return 1
+
+
+def cmd_skills(args: argparse.Namespace) -> int:
+    if args.skills_action == "show":
+        print(SKILL_PATH.read_text())
+        return 0
+    if args.skills_action == "install":
+        target_dir = Path(args.target) / "tekton-innerloop"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        dest = target_dir / "SKILL.md"
+        shutil.copy2(SKILL_PATH, dest)
+        print(f"{GREEN}✔ Installed Agent Skill:{RESET} {BOLD}{dest}{RESET}")
+        return 0
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="tkn-innerloop",
+        description="Fast Inner-Loop Tekton Validation for Coding Agents",
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_inspect = sub.add_parser("inspect", help="Analyze a .tekton PipelineRun for inner-loop vs outer-loop steps")
+    p_inspect.add_argument("file", help="Path to .tekton/*.yaml PipelineRun")
+
+    p_gen = sub.add_parser("generate", help="Generate a local host or Podman/Docker script from a PipelineRun")
+    p_gen.add_argument("file", help="Path to .tekton/*.yaml PipelineRun")
+    p_gen.add_argument("--runtime", choices=["host", "podman", "docker"], default="host")
+    p_gen.add_argument("--steps", help="Comma-separated list of steps to include")
+    p_gen.add_argument("-o", "--output", help="Write executable script to path")
+
+    p_run = sub.add_parser("run", help="Execute inner-loop Tekton steps locally")
+    p_run.add_argument("file", help="Path to .tekton/*.yaml PipelineRun")
+    p_run.add_argument("--runtime", choices=["host", "podman", "docker"], default="host")
+    p_run.add_argument("--steps", help="Comma-separated list of step names to run")
+    p_run.add_argument("--fail-fast", action="store_true", help="Stop on first failing step")
+    p_run.add_argument("-v", "--verbose", action="store_true", help="Show step output on pass")
+    p_run.add_argument("--timeout", type=int, default=180, help="Per-step timeout in seconds")
+
+    p_skills = sub.add_parser("skills", help="Print or install the embedded Tekton Inner-Loop Agent Skill")
+    p_skills.add_argument("skills_action", choices=["show", "install"], default="show", nargs="?")
+    p_skills.add_argument("--target", default=".agents/skills", help="Target skills directory for install")
+
+    args = parser.parse_args()
+    if args.cmd == "inspect":
+        return cmd_inspect(args)
+    if args.cmd == "generate":
+        return cmd_generate(args)
+    if args.cmd == "run":
+        return cmd_run(args)
+    if args.cmd == "skills":
+        return cmd_skills(args)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
