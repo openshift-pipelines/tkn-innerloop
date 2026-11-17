@@ -10,6 +10,7 @@ import concurrent.futures
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -61,12 +62,20 @@ def checkout(repo: str, commit: str, dest: Path) -> None:
 def cli(*args: str, cwd: Path, log: Path, timeout: float) -> int:
     env = {**os.environ, "NO_COLOR": "1"}
     with log.open("w") as out:
+        proc = subprocess.Popen(
+            [sys.executable, str(CLI), *args], cwd=cwd, env=env,
+            stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
+        )
         try:
-            return subprocess.run(
-                [sys.executable, str(CLI), *args], cwd=cwd, env=env,
-                stdout=out, stderr=subprocess.STDOUT, timeout=timeout, check=False,
-            ).returncode
+            return proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
+            # SIGINT lets the CLI remove its container and stop the model before exiting.
+            proc.send_signal(signal.SIGINT)
+            try:
+                proc.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
             out.write(f"\ncorpus-check: timed out after {timeout:g}s\n")
             return 124
 
@@ -96,7 +105,7 @@ def check_plan(plan: dict, expected: dict) -> list[str]:
 
 
 def run_steps(plan_file: Path, root: Path, ids: list[str], commit: str, args, log: Path, timeout: int):
-    forwarded = [name for name in sorted(env_names(plan_file, ids)) if name in os.environ]
+    forwarded = [name for name in sorted(env_names(plan_file, ids)) if name in allowed_env(args)]
     command = [
         "run", str(plan_file), "--repo", str(root), "--steps", ",".join(ids),
         "--base", commit, "--runtime", args.runtime, "--timeout", str(timeout),
@@ -108,6 +117,11 @@ def run_steps(plan_file: Path, root: Path, ids: list[str], commit: str, args, lo
         if match := STEP_RESULT.match(line):
             (passed if match[1] else failed).add(match[1] or match[2])
     return code, passed, failed
+
+
+def allowed_env(args) -> set[str]:
+    """Variables the user allowed with --env that are set; nothing else reaches a plan."""
+    return {name for name in args.env if name in os.environ}
 
 
 def env_names(plan_file: Path, ids: list[str]) -> set[str]:
@@ -126,11 +140,11 @@ def execute(expected: dict, plan_file: Path, root: Path, commit: str, args, out:
     wanted = spec.get("steps") or list(decided)
     ids = [key for key in wanted if key in decided]
     missing = sorted(
-        name for key in ids for name in decided[key]["required_env"] if name not in os.environ
+        name for key in ids for name in decided[key]["required_env"] if name not in allowed_env(args)
     )
     result = {"steps": ids, "not_planned": [k for k in wanted if k not in decided], "breaks": []}
     if missing:
-        result["blocked"] = f"needs {', '.join(missing)}"
+        result["blocked"] = f"needs {', '.join(missing)} (pass --env NAME to forward it)"
         return result
     if not ids:
         result["blocked"] = "the plan runs none of these steps"
@@ -235,6 +249,10 @@ def main() -> int:
     parser.add_argument("--runtime", default="auto")
     parser.add_argument("--convert-timeout", type=int, default=300)
     parser.add_argument("--step-timeout", type=int, default=600)
+    parser.add_argument(
+        "--env", action="append", default=[], metavar="NAME",
+        help="Forward this variable to plans that ask for it (repeatable); none are by default",
+    )
     parser.add_argument("--out", help="Report directory (default: tmp/corpus-runs/<time>)")
     args = parser.parse_args()
 
@@ -262,6 +280,18 @@ def main() -> int:
         print(f"  converted {case.name}", flush=True)
         return report
 
+    try:
+        reports = run_cases(cases, origins, args, out, convert)
+    finally:
+        # Kept until now: a plan can depend on files conversion wrote, such as tkn pac resolve output.
+        for case in cases:
+            remove_worktree(origins[case.name][0], out / case.name / "worktree")
+    (out / "report.json").write_text(json.dumps(reports, indent=2) + "\n")
+    print()
+    return 0 if summary(reports) else 1
+
+
+def run_cases(cases: list[Path], origins: dict, args, out: Path, convert) -> list[dict]:
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
         reports = list(pool.map(convert, cases))
     if args.execute:
@@ -280,12 +310,7 @@ def main() -> int:
                 expected, out / case.name / f"plan-{valid[0]}.json",
                 out / case.name / "worktree", origins[case.name][1], args, out / case.name,
             )
-    # Kept until now: a plan can depend on files conversion wrote, such as tkn pac resolve output.
-    for case in cases:
-        remove_worktree(origins[case.name][0], out / case.name / "worktree")
-    (out / "report.json").write_text(json.dumps(reports, indent=2) + "\n")
-    print()
-    return 0 if summary(reports) else 1
+    return reports
 
 
 if __name__ == "__main__":

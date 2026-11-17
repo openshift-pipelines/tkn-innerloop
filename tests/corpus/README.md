@@ -31,6 +31,8 @@ met its expectations. Every planned step must pass on the unchanged source.
 Each entry in `breaks` then commits the listed `files` on top and the run must
 fail exactly on its `fail` steps. `execute.steps` limits the run to some steps,
 and `execute.timeout` sets the seconds allowed per step.
+Plans get no environment variables unless they are named with `--env NAME`,
+and a plan that requires one that was not given is reported as blocked.
 
 ```sh
 tests/corpus-check --model github-copilot/claude-sonnet-5.5:minimal --execute
