@@ -20,9 +20,12 @@ DURATION=$(ffprobe -v error -show_entries format=duration \
   -of default=noprint_wrappers=1:nokey=1 demo/tkn-innerloop-demo.mp4)
 python3 demo/generate_jazz.py "$DURATION" demo/jazz-backing.wav
 
+# -map matters: without it ffmpeg reuses the recording's own audio track and the
+# generated soundtrack is silently dropped, so the old music keeps playing.
 ffmpeg -y -loglevel error \
   -i demo/tkn-innerloop-demo.mp4 \
   -i demo/jazz-backing.wav \
+  -map 0:v:0 -map 1:a:0 \
   -c:v copy -c:a aac -b:a 192k -shortest \
   demo/tkn-innerloop-demo-sound.mp4
 mv demo/tkn-innerloop-demo-sound.mp4 demo/tkn-innerloop-demo.mp4
