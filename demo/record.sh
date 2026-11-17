@@ -8,7 +8,7 @@ export TKN_INNERLOOP_AI_MODEL="${TKN_INNERLOOP_AI_MODEL:-enmaas/rits/deepseek-ai
 export TKN_INNERLOOP_DEMO_STATE
 TKN_INNERLOOP_DEMO_STATE=$(mktemp -d -t tkn-innerloop-demo.XXXXXX)
 export DEMO_PLAN=/tmp/linters.json
-record_dir="$HOME/tmp/sharei/tkn-innerloop/shots"
+record_dir="$PWD/demo/out"
 mkdir -p "$record_dir"
 fixture="$PAC_REPO/pkg/params/innerloop_demo_test.go"
 [[ ! -e "$fixture" ]] || { echo "Refusing to overwrite $fixture" >&2; exit 1; }

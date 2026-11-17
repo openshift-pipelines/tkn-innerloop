@@ -128,12 +128,12 @@ aniflow --check README.md poc-report.md presentation.md
 `demo/record.sh` generates the plan during recording and checks expected command
 exit statuses. It refuses to overwrite an existing fixture, cleans up its own
 unchanged fixture on exit, and leaves an execution plan beside the video.
-Recordings and slide previews also go under `~/tmp/sharei/tkn-innerloop/shots/`.
+Recordings and screenshots are written to `demo/out/` (git-ignored); upload them with `sharec`.
 
 ## Public links
 
 - [Report](https://share.chmouel.com/public/mgR03lI6LCmhiLLCnnY8VQ/poc-report.md)
-- [Presentation](https://share.chmouel.com/public/ESO11s7v6V3aIVXkas5XTA/presentation.md#slide=1)
+- [Presentation](https://share.chmouel.com/public/YUzvD7r-N9fGd6w4V5Urdg/presentation.md#slide=1)
 - [Recorded demo](https://share.chmouel.com/public/IcLisUXEiQsgfT1N7tQzsA/tkn-innerloop-demo.mp4)
 - [Agent skill](https://share.chmouel.com/public/bCKjBFak-pNzlQabwE7dJQ/SKILL.md)
 
