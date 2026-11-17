@@ -8,6 +8,7 @@ accent: violet
 font: modern
 footer: Tekton Inner-Loop PoC
 numbers: true
+presentation: true   # sharei: show the "Play presentation" button
 transition: slide
 autoplay: true
 ---

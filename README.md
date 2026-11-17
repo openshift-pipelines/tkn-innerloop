@@ -4,7 +4,7 @@ Instead of re-implementing Kubernetes locally, this PoC pairs an **Agent Skill (
 
 ## Public Links
 
-- **Animated Presentation Deck (`presentation.md`)**: [Open on sharei](https://share.chmouel.com/public/57nbwkqrKZHn9buLawb9wg/presentation.md)
+- **Animated Presentation Deck (`presentation.md`)**: [Open on sharei](https://share.chmouel.com/public/T-iBled8FjZNJrCzNoPrEw/presentation.md#slide=1)
 - **Recorded Demo Video (MP4 with Elevator Music)**: <https://share.chmouel.com/public/jZRofFOy4r48bL-fgQtGUw/tkn-innerloop-demo.mp4>
 - **Agent Skill (`SKILL.md`)**: <https://share.chmouel.com/public/Kp0H0sAZIfR7NAipLx3THg/SKILL.md>
 
