@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "pipeline": ".tekton/linter.yaml",
+  "inputs": {
+    ".tekton/linter.yaml": "3da4657bc002059fe3b56cf7127eeec93f7ea550890eb3274653ccc3a14c3ca9"
+  },
+  "steps": [
+    {
+      "id": "linters/codespell",
+      "decision": "run",
+      "reason": "Pure local spell check over docs/content, pkg, test; runs in container image.",
+      "image": "registry.access.redhat.com/ubi9/python-312",
+      "shell": "/bin/sh",
+      "working_dir": "$WORKSPACE",
+      "env": {},
+      "required_env": [],
+      "depends_on": [],
+      "edits": [],
+      "adaptations": [
+        "Worktree mounted at $WORKSPACE instead of source workspace emptyDir; working_dir mapped from $(workspaces.source.path) to $WORKSPACE.",
+        "Script run unchanged; uses uncommitted working tree content, not a fresh clone."
+      ],
+      "script": "pip3 install codespell\ncodespell -d docs/content pkg test\n"
+    },
+    {
+      "id": "linters/check-test-conventions",
+      "decision": "run",
+      "reason": "Local PR context: PaC event and base SHA are replaced by local git merge-base against main; checks Go test naming and assertion conventions on changed _test.go files.",
+      "image": "docker.io/golang:1.27",
+      "shell": "/bin/bash",
+      "working_dir": "$WORKSPACE",
+      "env": {},
+      "required_env": [],
+      "depends_on": [],
+      "edits": [
+        {
+          "old": "git config --global --add safe.directory $(workspaces.source.path)\n",
+          "new": "git config --global --add safe.directory $WORKSPACE\n",
+          "reason": "Use the local worktree path instead of the Tekton workspace placeholder."
+        },
+        {
+          "old": "if [[ \"{{ headers['X-Github-Event'] }}\" != \"pull_request\" ]]; then\n  echo \"Not a pull request, skipping test convention check\"\n  exit 0\nfi\n\nbase_sha=\"{{ body.pull_request.base.sha }}\"\nif [[ -z \"$base_sha\" ]]; then\n  echo \"Base SHA is empty, skipping\"\n  exit 0\nfi\n",
+          "new": "base_sha=\"$BASE_SHA\"\nif [[ -z \"$base_sha\" ]]; then\n  echo \"Base SHA is empty, skipping\"\n  exit 0\nfi\n",
+          "reason": "PaC PR event/body variables replaced with local BASE_SHA = git merge-base HEAD main; PR-event gate removed since local runs are always PR-like checks."
+        },
+        {
+          "old": "files=$(git diff --name-only \"${base_sha}..HEAD\" -- '*.go' | grep -v '^vendor/' | grep '_test\\.go$' || true)\n",
+          "new": "files=$( { git diff --name-only \"${base_sha}\" -- '*.go'; git ls-files --others --exclude-standard -- '*.go'; } | sort -u | grep -v '^vendor/' | grep '_test\\.go$' || true)\n",
+          "reason": "Diff against base to working tree (committed, staged, unstaged) and union untracked files; original vendor and _test.go filters preserved after the union."
+        }
+      ],
+      "adaptations": [
+        "Shell changed from bash shebang to /bin/bash execution with same script semantics.",
+        "BASE_SHA is git merge-base HEAD main computed at execution; default base ref main is chosen at execution.",
+        "Changed-file semantics: committed, staged and unstaged changes plus untracked files versus base SHA (previously base..HEAD only).",
+        "PaC headers/body template gating replaced by local execution; the non-PR skip branch is dropped.",
+        "Workspace path replaced by $WORKSPACE."
+      ],
+      "script": "#!/usr/bin/env bash\nset -eu\ngit config --global --add safe.directory $WORKSPACE\n\nbase_sha=\"$BASE_SHA\"\nif [[ -z \"$base_sha\" ]]; then\n  echo \"Base SHA is empty, skipping\"\n  exit 0\nfi\n\nfiles=$( { git diff --name-only \"${base_sha}\" -- '*.go'; git ls-files --others --exclude-standard -- '*.go'; } | sort -u | grep -v '^vendor/' | grep '_test\\.go$' || true)\nif [ -z \"$files\" ]; then\n  echo \"No test files modified.\"\n  exit 0\nfi\n\nfailed=0\nwhile IFS= read -r file; do\n  [ -z \"$file\" ] && continue\n  [ ! -f \"$file\" ] && continue\n\n  bad_names=$(grep -n '^func Test[A-Za-z]*_[A-Za-z]' \"$file\" || true)\n  if [ -n \"$bad_names\" ]; then\n    echo \"ERROR: $file: test function names must use PascalCase (no underscores):\"\n    echo \"$bad_names\"\n    failed=1\n  fi\n\n  bad_asserts=$(grep -En '\\bt\\.(Errorf|Fatalf|Fatal|Error)\\(' \"$file\" || true)\n  if [ -n \"$bad_asserts\" ]; then\n    echo \"WARNING: $file: use gotest.tools/v3/assert instead of t.Errorf/t.Fatalf/t.Fatal/t.Error:\"\n    echo \"$bad_asserts\"\n  fi\ndone <<< \"$files\"\n\nif [ \"$failed\" -ne 0 ]; then\n  echo \"Fix violations above. See AGENTS.md for testing conventions.\"\n  exit 1\nfi\necho \"All modified test files pass convention checks.\"\n"
+    },
+    {
+      "id": "linters/fetch-repo",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/generate-release-yaml",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/shellcheck",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/commit-validation",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/check-e2e-tests-naming",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/check-generated-schemas",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/yamllint",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/zizmor",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/ruff-lint",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/ruff-format",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/markdownlint",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/vale",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    },
+    {
+      "id": "linters/goreleaser-check",
+      "decision": "skip",
+      "reason": "Outside requested scope"
+    }
+  ]
+}

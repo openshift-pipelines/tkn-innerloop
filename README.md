@@ -1,67 +1,140 @@
-# Fast Inner-Loop Tekton Validation for Coding Agents (PoC)
+# Tekton checks in the local edit loop
 
-Instead of re-implementing Kubernetes locally, this PoC pairs an **Agent Skill (`tekton-innerloop`)** with a lightweight CLI (`tkn-innerloop`) that inspects `.tekton/` PipelineRuns, separates fast inner-loop checks from outer-loop cluster steps, and runs the **exact** CI commands and flags against your local Git working tree in **~3 seconds**.
+`tkn-innerloop` asks a coding agent to turn a Tekton PipelineRun into a local
+execution plan. You review the changes once, then run the saved plan in Docker
+or Podman after code edits. Kubernetes stays in CI.
 
-## Public Links
+The agent reads repository helpers as well as YAML. It proposes exact edits to
+source scripts and explains which steps run, which are skipped, and which still
+have unresolved requirements. The CLI handles validation and execution.
 
-- **Walkthrough deck (playable)**: <https://share.chmouel.com/public/YUzvD7r-N9fGd6w4V5Urdg/presentation.md#slide=1>
-- **Agent skill**: <https://share.chmouel.com/public/RgQdIIxsMlDuMKM50EYCvA/SKILL.md>
+## Try it
 
-## How It Works (Plain English)
+Install Python 3.10+, PyYAML, the [pi coding agent](https://github.com/earendil-works/pi),
+and Docker or Podman. Authenticate a provider in pi. Conversion defaults to Haiku;
+use `--model` or `TKN_INNERLOOP_AI_MODEL` to choose another model.
 
-1. **Read & Sort the Pipeline (80% Inner Loop vs. 20% Outer Loop)**
-   - Running a full Kubernetes + Tekton control plane locally is heavy when coding agents just need to know whether their code edits will break CI.
-   - `tkn-innerloop inspect .tekton/linter.yaml` classifies **12 out of 15 steps (80%)** in Pipelines-as-Code's `.tekton/linter.yaml` as runnable in the local inner loop (`codespell`, `shellcheck`, `commit-validation`, `check-e2e-tests-naming`, `check-test-conventions`, `yamllint`, `ruff-lint`, `ruff-format`, `markdownlint`, `vale`, `goreleaser-check`, `generate-release-yaml`) and skips cluster-only steps (`fetch-repo` StepAction, root `/usr/bin` OpenAPI schema installer, and `zizmor` requiring `HUB_TOKEN`).
+```sh
+python3 -m pip install -r requirements.txt
+export PATH="$PWD/bin:$PATH"
+cd /path/to/your/repository
 
-2. **Translate Cluster Variables to Local Git Paths**
-   - Replaces `$(workspaces.source.path)` with the local Git working tree root (`git rev-parse --show-toplevel`).
-   - Binds Pipelines-as-Code Pull Request variables (`{{ headers['X-Github-Event'] }}` and `{{ body.pull_request.base.sha }}`) to your local Git branch range (`git merge-base HEAD main`).
+tkn-innerloop inspect .tekton/linter.yaml
+tkn-innerloop generate .tekton/linter.yaml \
+  --steps codespell,check-test-conventions -o /tmp/linters.plan.json
+tkn-innerloop validate /tmp/linters.plan.json --diff
+tkn-innerloop run /tmp/linters.plan.json --runtime docker --base origin/main
+```
 
-3. **Catch CI-Only Failures in ~2 Seconds**
-   - When an agent writes a new Go unit test (`TestInnerLoop_ConfigValidation`) that uses `t.Errorf(...)` and contains a comment typo (`teh`), a standard `go test ./pkg/params` **passes** in 11ms.
-   - Running `tkn-innerloop run .tekton/linter.yaml` executes the exact `check-test-conventions` and `codespell` scripts from `.tekton/linter.yaml`, catching both failures in **1.8 seconds**.
+The step names above are the PaC demo's scope; choose names from your pipeline.
+Use the full step ID from `inspect` when a step name is ambiguous. Files containing
+multiple YAML documents use `pipelinerun/task/step` IDs; a single PipelineRun uses
+`task/step`. Empty YAML documents are ignored. Generation supports embedded
+PipelineRuns; pipeline references must be resolved first. Remote task/step
+references appear in the inventory and cannot be executed as unresolved refs.
 
-4. **Pluggable Podman / Host Script Generation + Built-in Skill**
-   - `tkn-innerloop generate .tekton/linter.yaml --runtime podman` outputs a ready-to-run `podman run --rm -v "$WORKSPACE:/workspace:Z"` script using each step's exact container image.
-   - `tkn-innerloop skills show` / `tkn-innerloop skills install` ships the skill inside the CLI.
-
-5. **AI Fallback When the Rules Are Not Enough**
-   - Some pipelines carry remote StepActions, cluster secrets, caches or generated code that rules cannot safely rewrite.
-   - `tkn-innerloop generate .tekton/go.yaml --ai --runtime dockerfile` hands the YAML to a coding agent (here `pi`) and gets back a multi-stage `Dockerfile` with the same images and flags; `--ai --runtime docker` returns a `docker run` script instead.
-   - The agent runs with no tools (`pi -p --no-tools`), so it only reads the YAML and writes the artifact. Pick a model with `--model` or `TKN_INNERLOOP_AI_MODEL` (the demo uses `enmaas/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017`).
+## Conversion and execution
 
 ```mermaid
 flowchart LR
-  YAML@{ img: "/icons/file-code.svg", label: ".tekton/linter.yaml", w: 48, h: 48, constraint: "on" }
-  Inspect@{ img: "/icons/filter.svg", label: "tkn-innerloop inspect", w: 48, h: 48, constraint: "on" }
-  Inner@{ img: "/icons/task.svg", label: "12 Inner-Loop Steps", w: 48, h: 48, constraint: "on" }
-  Outer@{ img: "/icons/cloud.svg", label: "3 Outer-Loop Steps", w: 48, h: 48, constraint: "on" }
-  Bind@{ img: "/icons/config.svg", label: "Rewrite PaC & Paths", w: 48, h: 48, constraint: "on" }
-  Run@{ img: "/icons/success.svg", label: "12/12 PASS in 3.1s", w: 48, h: 48, constraint: "on" }
+  Source@{ img: "/icons/repository.svg", label: "Pipeline and helpers", w: 48, h: 48, constraint: "on" }
+  Agent@{ img: "/icons/agent.svg", label: "Read and propose", w: 48, h: 48, constraint: "on" }
+  Plan@{ img: "/icons/document.svg", label: "Review the plan", w: 48, h: 48, constraint: "on" }
+  Check@{ img: "/icons/check.svg", label: "Validate inputs", w: 48, h: 48, constraint: "on" }
+  Run@{ img: "/icons/container.svg", label: "Run local scope", w: 48, h: 48, constraint: "on" }
+  Edit@{ img: "/icons/code.svg", label: "Edit source", w: 48, h: 48, constraint: "on" }
+  Source --> Agent --> Plan --> Check --> Run --> Edit
+  Edit --> Check
 
-  YAML --> Inspect
-  Inspect --> Inner
-  Inspect --> Outer
-  Inner --> Bind --> Run
-
-%% play: Inner-loop execution
-%% YAML -> Inspect : 15 steps | Read .tekton/linter.yaml from the repository
-%% Inspect -> Outer : skip 3 | Skip cluster-only steps (git-clone, cluster secrets)
-%% Inspect -> Inner : keep 12 | Select the 12 deterministic linter and convention checks
-%% Inner -> Bind : translate | Bind $(workspaces.source.path) and PaC PR variables to local Git
-%% Bind -> Run : execute | Run all 12 Tekton steps locally in 3.1 seconds
+%% play: Convert once
+%% Source -> Agent | The agent reads YAML, Makefiles and referenced helpers with read-only tools
+%% Agent -> Plan : edits | Review exact script changes, prerequisites and excluded checks
+%% Plan -> Check | The CLI verifies source hashes, image provenance and script structure
+%% Check -> Run | Execute the selected checks in their declared images
+%% play: Reuse after editing
+%% skip Source Agent Plan
+%% Run -> Edit
+%% Edit -> Check | Code edits reuse the saved plan; changed pipeline inputs require regeneration
+%% Check -> Run : no model | Run the same local scope again
 ```
 
-<details>
-<summary>Repository Layout</summary>
+Every source step needs a decision. Unknown steps start unresolved; there is no
+command-name allowlist or deployment blacklist deciding what executes. Generation
+uses pi's `read`, `grep`, `find` and `ls` tools. Read-only tools are not a filesystem
+sandbox. Model selection uses `--model` or `TKN_INNERLOOP_AI_MODEL`.
 
-- `SKILL.md` & `skills/tekton-innerloop/SKILL.md` — The Agent Skill instructing coding agents how to inspect, generate, and run `.tekton` inner-loop checks and honor `(run-local)` / `(skip-local)` descriptions.
-- `presentation.md` — Animated `aniflow` slide deck explaining the architecture and workflow.
-- `bin/tkn-innerloop` — CLI with `inspect`, `generate` (`--runtime host|podman|docker`), `run` (`--steps`, `--fail-fast`), and `skills` (`show|install`).
-- `demo/demo.tape` — VHS tape for the terminal recording (not published; rebuild with `record.sh`).
-- `demo/record.sh` — Rebuilds the recording and its soundtrack (`PAC_REPO=/path/to/pipelines-as-code ./demo/record.sh`).
-- `demo/banner.sh` — Terminal explanation banners used in the recording.
-- `demo/generate_jazz.py` — Synthesizes the jazz swing backing track.
-- `demo/toggle-defects.sh` — Helper script that injects and fixes the `check-test-conventions` + `codespell` violations during the recording.
+Conversion sends the requested scope directly to the agent and disables pi's
+startup update checks. Only referenced helpers and configuration need further
+reads. Terminal output shows live progress and elapsed time, with colored step
+badges and results. Redirected output stays free of ANSI styling; `NO_COLOR`
+disables color. Use `validate --diff` for all decisions and adaptation details.
 
-</details>
+`validate --diff` shows the original and adapted scripts. Script edits must match
+source fragments exactly once. Runnable steps retain their source image and
+specify their shell, environment, working directory and dependencies. The runner
+rejects stale input hashes, unknown selections, missing declared setup steps,
+unbound Tekton/PaC placeholders and unresolved steps in the selected scope.
+
+Review generated commands before executing them. Structural validation cannot
+prove equivalent behavior or safe commands. The runner executes scripts with a
+writable worktree; it does not emulate Tekton's scheduler, services or result
+propagation. The agent must account for those requirements or leave a step
+unresolved. The declared input list determines which helper/configuration changes
+invalidate the plan.
+
+## Repeat a check
+
+```sh
+tkn-innerloop run /tmp/linters.plan.json --steps check-test-conventions --base origin/main
+tkn-innerloop run /tmp/linters.plan.json --runtime podman --base origin/main
+tkn-innerloop skills install
+```
+
+Docker is the default. Both container runtimes mount the worktree at `/workspace`,
+override the image entrypoint with the declared shell, and pass scripts via stdin.
+`BASE_SHA` uses `git merge-base HEAD <base-ref>` at execution; the default ref is
+`main`. Forward declared secrets explicitly with `--env NAME`. No credentials
+are fetched automatically.
+
+`--runtime host` executes the same scripts with host tools, setup commands and
+environment. Use it only after reviewing those commands. Source image tags and
+network downloads can change tool versions, including during container execution.
+
+A successful run reports the executed scope and skipped/unresolved counts.
+Cluster CI still covers the remaining pipeline requirements.
+
+## Demo and verification
+
+The recording uses two checks from PaC's real `.tekton/linter.yaml`: `codespell`
+and `check-test-conventions`. It shows plan generation, review, container
+execution, two injected failures, and a passing rerun after the fixture is fixed.
+Plain CLI commands are shown, with typing and command-execution waits cut.
+The opening states this edit; results and on-screen timings come from real runs.
+The other 13 steps are explicitly outside this demo scope. The `t.Errorf` check
+only warns; the failing conditions are the spelling mistake and test-name rule.
+
+Conversion and image pulls are separate setup costs. The recording uses cached
+source images; measured rerun times include any setup still in the scripts.
+There is no general coverage percentage or fixed runtime claim.
+
+```sh
+python3 -m unittest discover -s tests -v
+ruff check bin/tkn-innerloop tests
+shellcheck demo/*.sh
+PAC_REPO=~/git/pac/main ./demo/record.sh
+aniflow --check README.md poc-report.md presentation.md
+```
+
+`demo/record.sh` generates the plan during recording and checks expected command
+exit statuses. It refuses to overwrite an existing fixture, cleans up its own
+unchanged fixture on exit, and leaves an execution plan beside the video.
+Recordings and slide previews also go under `~/tmp/sharei/tkn-innerloop/shots/`.
+
+## Public links
+
+- [Report](https://share.chmouel.com/public/mgR03lI6LCmhiLLCnnY8VQ/poc-report.md)
+- [Presentation](https://share.chmouel.com/public/ESO11s7v6V3aIVXkas5XTA/presentation.md#slide=1)
+- [Recorded demo](https://share.chmouel.com/public/IcLisUXEiQsgfT1N7tQzsA/tkn-innerloop-demo.mp4)
+- [Agent skill](https://share.chmouel.com/public/bCKjBFak-pNzlQabwE7dJQ/SKILL.md)
+
+Anyone with these links can read them. Public links expire after 30 days.

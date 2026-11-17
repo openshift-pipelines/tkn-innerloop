@@ -1,31 +1,30 @@
 #!/usr/bin/env bash
-# Creates realistic inner-loop defects in the working tree that pass `go test`
-# and `git status`, OR fixes them so `.tekton/linter.yaml` turns green.
 set -euo pipefail
-
-MODE="${1:-break}"
-
-if [[ "$MODE" == "break" ]]; then
-  cat > pkg/params/innerloop_demo_test.go <<'EOF'
+: "${TKN_INNERLOOP_DEMO_STATE:?run this helper through demo/record.sh}"
+fixture=pkg/params/innerloop_demo_test.go
+checksum="$TKN_INNERLOOP_DEMO_STATE/fixture.sha256"
+case "${1:?use break, fix or clean}" in
+  break)
+    [[ ! -e "$fixture" ]] || { echo "Refusing to overwrite $fixture" >&2; exit 1; }
+    cat > "$fixture" <<'EOF'
 package params
 
 import "testing"
 
-// Intentionally violates .tekton/linter.yaml check-test-conventions & codespell:
-// 1. Underscore in test function name (TestInnerLoop_ConfigValidation)
-// 2. Uses t.Errorf instead of gotest.tools/v3/assert
-// 3. Contains a codespell typo ("teh" instead of "the")
 func TestInnerLoop_ConfigValidation(t *testing.T) {
-	// verifying teh default configuration in inner loop
+	// Verify teh default configuration.
 	got := "pac"
 	if got != "pac" {
 		t.Errorf("unexpected value: %s", got)
 	}
 }
 EOF
-  echo "Injected inner-loop defects into pkg/params/innerloop_demo_test.go"
-elif [[ "$MODE" == "fix" ]]; then
-  cat > pkg/params/innerloop_demo_test.go <<'EOF'
+    sha256sum "$fixture" > "$checksum"
+    echo "Created fixture: spelling error and invalid test name (t.Errorf only warns)."
+    ;;
+  fix)
+    sha256sum --check --status "$checksum"
+    cat > "$fixture" <<'EOF'
 package params
 
 import (
@@ -35,13 +34,23 @@ import (
 )
 
 func TestInnerLoopConfigValidation(t *testing.T) {
-	// verifying the default configuration in inner loop
+	// Verify the default configuration.
 	got := "pac"
 	assert.Equal(t, got, "pac")
 }
 EOF
-  echo "Fixed pkg/params/innerloop_demo_test.go to match .tekton/linter.yaml conventions"
-elif [[ "$MODE" == "clean" ]]; then
-  rm -f pkg/params/innerloop_demo_test.go
-  echo "Cleaned pkg/params/innerloop_demo_test.go"
-fi
+    sha256sum "$fixture" > "$checksum"
+    echo "Fixed the fixture. The execution plan is unchanged."
+    ;;
+  clean)
+    if [[ -f "$checksum" ]]; then
+      sha256sum --check --status "$checksum" || {
+        echo "Fixture changed outside the demo; leaving it in place: $fixture" >&2
+        exit 1
+      }
+      rm "$fixture" "$checksum"
+      echo "Removed the demo fixture."
+    fi
+    ;;
+  *) exit 1 ;;
+esac
