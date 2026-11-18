@@ -8,4 +8,4 @@ repos:
         entry: bin/tkn-innerloop run .tekton/ci.yaml
         language: system
         pass_filenames: false
-        types_or: [python, yaml, toml]
+        types_or: [python, yaml, toml, shell]

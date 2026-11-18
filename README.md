@@ -24,7 +24,8 @@ off unless the model name ends in a pi level such as
 `github-copilot/claude-sonnet-5.5:minimal`; some models refuse to turn it off.
 
 ```sh
-python3 -m pip install -e .                        # or: export PATH="$PWD/bin:$PATH"
+python3 -m pip install -e .
+# or run from the checkout: python3 -m pip install pyyaml; export PATH="$PWD/bin:$PATH"
 cd /path/to/your/repository
 
 tkn-innerloop run .tekton/go.yaml                  # convert if needed, then run

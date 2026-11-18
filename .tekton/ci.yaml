@@ -58,6 +58,13 @@ spec:
                 set -euo pipefail
                 python -m pip install --quiet --root-user-action=ignore --disable-pip-version-check ruff==0.17.5
                 ruff check .
+            - name: shellcheck
+              displayName: "Shellcheck"
+              image: docker.io/koalaman/shellcheck-alpine:stable
+              workingDir: $(workspaces.source.path)
+              script: |
+                #!/bin/sh
+                shellcheck demo/*.sh
             - name: unittest
               displayName: "Unit Tests"
               image: docker.io/library/python:3.13
