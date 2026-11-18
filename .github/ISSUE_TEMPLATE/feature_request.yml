@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest something tkn-innerloop should do, or do differently
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you hitting
+      description: The pipeline, the step or the workflow that does not work today, and what you do instead.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you want it to do
+      description: The behaviour, the command or the flag you have in mind. A sketch of the output helps.
+    validations:
+      required: true
+  - type: checkboxes
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - label: Reading the pipeline and choosing the local steps
+        - label: Writing the plan
+        - label: The model backend
+        - label: Running the checks, containers and caches
+        - label: Documentation, the website or the skill
+        - label: Packaging, installation or CI
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Workarounds, other tools, or the flag that gets you halfway.
+    validations:
+      required: false
+  - type: textarea
+    id: pipeline
+    attributes:
+      label: Example pipeline
+      description: A minimal PipelineRun that shows the case. Remove anything private.
+      render: yaml
+    validations:
+      required: false
+  - type: dropdown
+    id: help
+    attributes:
+      label: Would you work on it
+      options:
+        - Yes, I can send a pull request
+        - Yes, with some guidance
+        - No, I am only reporting
+    validations:
+      required: true

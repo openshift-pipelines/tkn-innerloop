@@ -1,0 +1,107 @@
+name: Bug report
+description: Something broke, gave a wrong answer, or refused to run
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A plan that marks a step unresolved and explains why is usually the tool working as intended. This form is for the cases where it did something wrong.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The behaviour you saw, in your words.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command you ran
+      description: The full command, with the flags and the pipeline path.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+  - type: dropdown
+    id: pipeline-kind
+    attributes:
+      label: What kind of pipeline
+      options:
+        - Tekton Pipeline or PipelineRun in the repository
+        - Pipelines-as-Code
+        - Konflux
+        - Tekton Hub or bundle reference
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      options:
+        - Released binary
+        - Built from source
+        - Python wheel
+        - Running from a git checkout
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Container runtime
+      options:
+        - podman
+        - docker
+        - host mode
+        - It failed before any check ran
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Which model backend wrote the plan
+      options:
+        - Gemini
+        - Claude
+        - OpenAI
+        - pi
+        - The plan was cached or passed with a file
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The output of `tkn-innerloop --version` once it exists, or the commit you built from.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and architecture
+      placeholder: Fedora 42 on amd64
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Relevant part of the plan
+      description: The step that misbehaved, if the problem is in a plan. Remove anything private first.
+      render: json
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output
+      description: What the command printed. `tkn-innerloop validate --diff` is useful when the plan looks wrong.
+      render: shell
+    validations:
+      required: false

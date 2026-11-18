@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage guide
+    url: https://openshift-pipelines.github.io/tkn-innerloop/usage.html
+    about: What the tool does, the commands, the flags and the plan format.
+  - name: How the project is built and tested
+    url: https://github.com/openshift-pipelines/tkn-innerloop/blob/main/DEVELOPER.md
+    about: Layout, checks and the corpus, before you send a pull request.
