@@ -19,9 +19,9 @@ from pathlib import Path
 
 import yaml
 
-HERE = Path(__file__).resolve().parent
-CORPUS = HERE / "corpus"
-CLI = HERE.parent / "bin" / "tkn-innerloop"
+ROOT = Path(__file__).resolve().parents[1]
+CORPUS = ROOT / "tests" / "corpus"
+CLI = ROOT / "bin" / "tkn-innerloop"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "tkn-innerloop" / "corpus"
 SOURCE_ROW = re.compile(r"^\| (\S+) \| \[[^\]]+\]\(https://github\.com/([^/]+/[^/]+)/tree/([0-9a-f]{40})\)")
 STEP_RESULT = re.compile(r"^\s*(?:✓ (\S+) passed|✗ (\S+) (?:failed \(exit|timed out))")
@@ -270,7 +270,7 @@ def main() -> int:
     if unknown:
         parser.error(f"no runnable case named {', '.join(sorted(unknown))}")
     model = re.sub(r"[^A-Za-z0-9.-]+", "-", args.model)
-    out = Path(args.out or HERE.parent / "tmp" / "corpus-runs" / f"{time.strftime('%Y%m%d-%H%M%S')}-{model}").resolve()
+    out = Path(args.out or ROOT / "tmp" / "corpus-runs" / f"{time.strftime('%Y%m%d-%H%M%S')}-{model}").resolve()
     print(f"{len(cases)} cases · {args.runs} plans each · {args.model} · {out}", flush=True)
     os.environ["XDG_CACHE_HOME"] = str(out / "cache")
 

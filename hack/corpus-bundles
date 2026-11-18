@@ -8,7 +8,6 @@ reference resolved to is pinned in <case>/bundles/tags.yaml. Needs skopeo and ne
 
 import argparse
 import os
-import runpy
 import shutil
 import sys
 import tempfile
@@ -16,9 +15,12 @@ from pathlib import Path
 
 import yaml
 
-HERE = Path(__file__).resolve().parent
-CORPUS = HERE / "corpus"
-CLI = HERE.parent / "bin" / "tkn-innerloop"
+ROOT = Path(__file__).resolve().parents[1]
+CORPUS = ROOT / "tests" / "corpus"
+sys.path.insert(0, str(ROOT / "src"))
+
+from tkn_innerloop import bundles  # noqa: E402
+from tkn_innerloop.inventory import inventory  # noqa: E402
 
 
 def vendor(case: Path) -> int:
@@ -26,17 +28,18 @@ def vendor(case: Path) -> int:
     with tempfile.TemporaryDirectory(prefix="corpus-bundles-") as tmp:
         os.environ["XDG_CACHE_HOME"] = tmp
         os.environ.pop("TKN_INNERLOOP_BUNDLE_DIR", None)
-        module = runpy.run_path(str(CLI))
+        bundles._bundle_digests.clear()
+        bundles._bundle_failures.clear()
         root = Path(tmp) / "repo"
         shutil.copytree(case / "repo", root)
         try:
-            module["inventory"](root / expected["source"], root)
+            inventory(root / expected["source"], root)
         except ValueError as exc:
             if not expected.get("error"):
                 raise
             print(f"  {case.name}: {exc}", file=sys.stderr)
-        if module["_bundle_failures"]:
-            for name, exc in module["_bundle_failures"].items():
+        if bundles._bundle_failures:
+            for name, exc in bundles._bundle_failures.items():
                 print(f"  {case.name}: {name}: {exc}", file=sys.stderr)
             raise SystemExit(1)
         target = case / "bundles"
@@ -45,9 +48,9 @@ def vendor(case: Path) -> int:
         if not fetched.is_dir():
             return 0
         shutil.copytree(fetched, target)
-        if module["_bundle_digests"]:
-            (target / "tags.yaml").write_text(yaml.safe_dump(module["_bundle_digests"]))
-        return sum(1 for _ in target.rglob("*.yaml")) - bool(module["_bundle_digests"])
+        if bundles._bundle_digests:
+            (target / "tags.yaml").write_text(yaml.safe_dump(bundles._bundle_digests))
+        return sum(1 for _ in target.rglob("*.yaml")) - bool(bundles._bundle_digests)
 
 
 def main() -> int:
