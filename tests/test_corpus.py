@@ -20,7 +20,7 @@ from .helpers import CORPUS, REPO, offline_skopeo, patch_names
 
 class CorpusTests(unittest.TestCase):
     def test_shipped_demo_plan_validates_against_the_pinned_source(self):
-        plan = REPO / "demo" / "linters.plan.json"
+        plan = REPO / "docs" / "demo" / "linters.plan.json"
         load_plan(plan, CORPUS / "pac-linter" / "repo")
 
     """Real pipelines from other repositories; see tests/corpus/SOURCES.md."""

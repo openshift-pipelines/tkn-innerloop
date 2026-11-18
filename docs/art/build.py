@@ -13,7 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+DOCS = Path(__file__).resolve().parent.parent
+ROOT = DOCS.parent
 PICTURE = re.compile(r"!\[([^\]]*)\]\((art/[A-Za-z0-9_.-]+\.svg)\)")
 
 
@@ -36,14 +37,14 @@ def rasterise(svg: Path) -> bytes:
 
 def inline(match: re.Match) -> str:
     alt, rel = match.groups()
-    data = base64.b64encode(rasterise(ROOT / rel)).decode("ascii")
+    data = base64.b64encode(rasterise(DOCS / rel)).decode("ascii")
     return f"![{alt}](data:image/png;base64,{data})"
 
 
 def main() -> None:
     if not shutil.which("rsvg-convert"):
         sys.exit("rsvg-convert is required (librsvg)")
-    text = (ROOT / "presentation.md").read_text(encoding="utf-8")
+    text = (DOCS / "presentation.md").read_text(encoding="utf-8")
     out = ROOT / "dist" / "presentation.public.md"
     out.parent.mkdir(exist_ok=True)
     out.write_text(PICTURE.sub(inline, text), encoding="utf-8")

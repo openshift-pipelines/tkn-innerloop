@@ -1,4 +1,4 @@
-Output "demo/out/tkn-innerloop-demo.mp4"
+Output "docs/demo/out/tkn-innerloop-demo.mp4"
 Set Shell "bash"
 Set FontSize 24
 Set Width 1800
@@ -12,11 +12,11 @@ Set Theme "Catppuccin Mocha"
 Set TypingSpeed 0ms
 Set CursorBlink false
 Hide
-Type "export PATH=$INNERLOOP_REPO/bin:$INNERLOOP_REPO/demo:$PATH; unset NO_COLOR; export TERM=xterm-256color"
+Type "export PATH=$INNERLOOP_REPO/bin:$INNERLOOP_REPO/docs/demo:$PATH; unset NO_COLOR; export TERM=xterm-256color"
 Enter
 Type "cd $PAC_REPO"
 Enter
-Type "source $INNERLOOP_REPO/demo/session.sh"
+Type "source $INNERLOOP_REPO/docs/demo/session.sh"
 Enter
 Wait+Line /pac> ?$/
 Type "toggle-defects.sh break"
@@ -28,7 +28,7 @@ Wait+Screen /GO TEST PASSES/
 Wait+Line /pac> ?$/
 Show
 Sleep 300ms
-Screenshot "demo/out/demo-opening.png"
+Screenshot "docs/demo/out/demo-opening.png"
 Sleep 10s
 Hide
 Type "banner.sh defects"
@@ -72,7 +72,7 @@ Hide
 Wait+Line@300s /pac> ?$/
 Show
 Sleep 300ms
-Screenshot "demo/out/demo-conversion.png"
+Screenshot "docs/demo/out/demo-conversion.png"
 Sleep 3s
 Hide
 Type "banner.sh plan"
@@ -102,7 +102,7 @@ Hide
 Wait+Line@180s /pac> ?$/
 Show
 Sleep 300ms
-Screenshot "demo/out/demo-spelling-failure.png"
+Screenshot "docs/demo/out/demo-spelling-failure.png"
 Sleep 5s
 Type "tkn-innerloop run /tmp/linters.json --steps check-test-conventions --base main"
 Sleep 700ms
@@ -145,7 +145,7 @@ Hide
 Wait+Line@180s /pac> ?$/
 Show
 Sleep 300ms
-Screenshot "demo/out/demo-passing.png"
+Screenshot "docs/demo/out/demo-passing.png"
 Sleep 8s
 Hide
 Type "toggle-defects.sh clean"

@@ -256,8 +256,8 @@ each commit; GitHub Actions runs the same lint and tests.
 ```sh
 make lint test
 make innerloop                                     # run .tekton/ci.yaml locally
-PAC_REPO=~/git/pac/main ./demo/record.sh
-aniflow --check README.md poc-report.md presentation.md
+PAC_REPO=~/git/pac/main ./docs/demo/record.sh
+aniflow --check README.md docs/poc-report.md docs/presentation.md
 ```
 
 `tests/corpus/` holds 17 real PipelineRuns and Pipelines from Pipelines-as-Code,
@@ -269,10 +269,10 @@ checks them against per-case expectations, and with `--execute` runs some of the
 on the source repository, then again with a planted failure that must be caught.
 `tests/corpus/README.md` explains both and how to add a case.
 
-`demo/record.sh` generates the plan during recording and checks expected command
+`docs/demo/record.sh` generates the plan during recording and checks expected command
 exit statuses. It refuses to overwrite an existing fixture, cleans up its own
 unchanged fixture on exit, and leaves an execution plan beside the video.
-Recordings and screenshots are written to `demo/out/` (git-ignored); upload them with `sharec`.
+Recordings and screenshots are written to `docs/demo/out/` (git-ignored); upload them with `sharec`.
 
 ## Public links
 
@@ -284,10 +284,10 @@ Anyone with these links can read them. Public links expire after 30 days.
 
 ## Publishing the deck
 
-`presentation.md` references pictures in `art/` (drawn by `art/make_art.py`). A public sharei page only
+`docs/presentation.md` references pictures in `docs/art/` (drawn by `docs/art/make_art.py`). A public sharei page only
 loads inline images, so build the inlined copy first, then upload it under the deck's name:
 
 ```sh
-python3 art/build.py
+python3 docs/art/build.py
 sharec dist/presentation.public.md -p <project> -n presentation.md --replace -y --public-ttl 0
 ```

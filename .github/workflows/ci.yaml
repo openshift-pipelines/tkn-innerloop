@@ -18,7 +18,7 @@ jobs:
           python-version: "3.13"
       - run: pip install ruff==0.17.5
       - run: ruff check .
-      - run: shellcheck demo/*.sh
+      - run: shellcheck docs/demo/*.sh
 
   test:
     runs-on: ubuntu-latest

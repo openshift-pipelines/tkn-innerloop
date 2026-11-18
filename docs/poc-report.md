@@ -94,8 +94,8 @@ commands; conversion and image pulls remain separate costs.
 ```sh
 python3 -m unittest discover -s tests -v
 ruff check bin/tkn-innerloop tests
-shellcheck demo/*.sh
-aniflow --check README.md poc-report.md presentation.md
+shellcheck docs/demo/*.sh
+aniflow --check README.md docs/poc-report.md docs/presentation.md
 PAC_REPO=~/git/pac/main ./demo/record.sh
 ```
 

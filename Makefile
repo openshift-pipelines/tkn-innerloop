@@ -10,7 +10,7 @@ test:
 
 lint:
 	ruff check .
-	shellcheck demo/*.sh
+	shellcheck docs/demo/*.sh
 
 fix:
 	ruff check --fix .

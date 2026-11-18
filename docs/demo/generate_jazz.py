@@ -13,7 +13,7 @@ import numpy as np
 
 SR = 44100
 DURATION = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
-OUT_WAV = sys.argv[2] if len(sys.argv) > 2 else "demo/jazz-backing.wav"
+OUT_WAV = sys.argv[2] if len(sys.argv) > 2 else "docs/demo/jazz-backing.wav"
 
 BPM = 126.0
 BEAT = 60.0 / BPM

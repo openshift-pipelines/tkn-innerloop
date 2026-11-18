@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-: "${TKN_INNERLOOP_DEMO_STATE:?run this helper through demo/record.sh}"
+: "${TKN_INNERLOOP_DEMO_STATE:?run this helper through docs/demo/record.sh}"
 fixture=pkg/params/innerloop_demo_test.go
 checksum="$TKN_INNERLOOP_DEMO_STATE/fixture.sha256"
 case "${1:?use break, fix or clean}" in

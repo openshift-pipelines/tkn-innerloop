@@ -1,10 +1,10 @@
-demo/*.wav
-demo/*-frame.png
+docs/demo/*.wav
+docs/demo/*-frame.png
 __pycache__/
 dist/
-demo/out/
+docs/demo/out/
 tmp/
-demo/*.mp4
+docs/demo/*.mp4
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
