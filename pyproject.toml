@@ -7,6 +7,8 @@ name = "tkn-innerloop"
 version = "0.1.0"
 description = "Run Tekton pipeline checks locally with an agent-written execution plan"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0,<7"]
 
@@ -14,7 +16,7 @@ dependencies = ["PyYAML>=6.0,<7"]
 tkn-innerloop = "tkn_innerloop.cli:main"
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "skills", "tests", "README.md"]
+include = ["src", "skills", "tests", "README.md", "LICENSE"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tkn_innerloop"]

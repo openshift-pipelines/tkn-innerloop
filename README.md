@@ -23,9 +23,19 @@ use `--model` or `TKN_INNERLOOP_AI_MODEL` to choose another model. Thinking is
 off unless the model name ends in a pi level such as
 `github-copilot/claude-sonnet-5.5:minimal`; some models refuse to turn it off.
 
+Install the command with [uv](https://docs.astral.sh/uv/), or try it once without
+installing anything:
+
 ```sh
-python3 -m pip install -e .
-# or run from the checkout: python3 -m pip install pyyaml; export PATH="$PWD/bin:$PATH"
+uv tool install git+ssh://git@github.com/openshift-pipelines/tkn-innerloop
+uvx --from git+ssh://git@github.com/openshift-pipelines/tkn-innerloop tkn-innerloop --help
+uv tool upgrade tkn-innerloop                      # later, to pick up new commits
+```
+
+From a checkout, `python3 -m pip install -e .` works too, or install PyYAML and
+put `bin/` on your `PATH`. Then, in the repository you want to check:
+
+```sh
 cd /path/to/your/repository
 
 tkn-innerloop run .tekton/go.yaml                  # convert if needed, then run
@@ -291,3 +301,7 @@ loads inline images, so build the inlined copy first, then upload it under the d
 python3 docs/art/build.py
 sharec dist/presentation.public.md -p <project> -n presentation.md --replace -y --public-ttl 0
 ```
+
+## License
+
+Apache License 2.0, see [LICENSE](LICENSE).
