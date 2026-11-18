@@ -1,4 +1,4 @@
-Output "demo/tkn-innerloop-demo.mp4"
+Output "demo/out/tkn-innerloop-demo.mp4"
 Set Shell "bash"
 Set FontSize 24
 Set Width 1800

@@ -125,7 +125,7 @@ HEAD = [
 # Comping punches, as swung eighth positions in the bar.
 COMP = {0: [(0, 2), (3, 2), (6, 2)], 1: [(2, 2), (4, 3)], 2: [(0, 3), (4, 2)], 3: [(3, 2), (6, 2)]}
 
-bars = int(math.ceil(DURATION / (4 * BEAT))) + 1
+bars = math.ceil(DURATION / (4 * BEAT)) + 1
 for bar in range(bars):
     t0 = bar * 4 * BEAT
     root, voicing, scale = PROGRESSION[bar % len(PROGRESSION)]

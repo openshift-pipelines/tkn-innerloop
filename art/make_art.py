@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-from pathlib import Path
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 ART_DIR = Path(__file__).resolve().parent
 

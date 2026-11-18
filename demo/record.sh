@@ -34,5 +34,4 @@ ffmpeg -y -loglevel error -i "$video" -i "$TKN_INNERLOOP_DEMO_STATE/jazz.wav" \
   -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest \
   "$record_dir/tkn-innerloop-demo-sound.mp4"
 mv "$record_dir/tkn-innerloop-demo-sound.mp4" "$video"
-cp "$video" demo/tkn-innerloop-demo.mp4
 printf 'Recorded %s (%ss). Execution plan: %s\n' "$video" "$duration" "$DEMO_PLAN"
