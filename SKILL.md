@@ -35,7 +35,15 @@ Tekton bundle references (`resolver: bundles`) are fetched with skopeo, cached
 and inlined the same way. A missing or other remote `pipelineRef` is an error.
 Missing, duplicate, ClusterTask and other resolver task references stay unresolved;
 `inspect` shows the reason. Konflux clone and trusted-artifact steps are provided
-by the local checkout and never run. Use the full ID
+by the local checkout and never run. tekton-caches `cache-fetch`/`cache-upload`
+steps are skipped locally. Explicit cache paths can use `$CACHES/<name>` when
+the consumers use the same image and workspace directory within a PipelineRun.
+`GOCACHE`, `GOMODCACHE`, `GOLANGCILINT_CACHE`, and npm's explicit
+`npm_config_cache` or `NPM_CONFIG_CACHE` can share storage across images with
+the same runtime UID. Each shared cache directory serves one tool. Other cross-image caches, relative paths,
+`node_modules`, and caches containing a working directory stay in place. Cache paths in scripts
+with here-documents or command substitutions need explicit adaptation.
+`tkn-innerloop cache clean` removes persistent local caches. Use the full ID
 shown by `inspect` to select ambiguous names: `pipelinerun/task/step` for multiple
 PipelineRuns, or `task/step` for a single one. Preserve follow-up annotations and
 cross-PipelineRun result requirements during conversion; leave them unresolved
@@ -101,7 +109,8 @@ including any setup commands in those scripts.
 origin's default branch, else `main`, else `master` (`--base` overrides). Declare any changed-file selection changes explicitly,
 including coverage of staged, unstaged and untracked files. Environment values
 and working directories support literal text plus `$WORKSPACE`, `$BASE_SHA`,
-`$BASE_REF`, `$HEAD_SHA`, `$HEAD_REF` and `$RESULTS`. Task results go to
+`$BASE_REF`, `$HEAD_SHA`, `$HEAD_REF`, `$RESULTS` and `$CACHES`. Keep `$CACHES`
+paths as given. Preserve the location of caches without a binding. Task results go to
 `$RESULTS/<task>/<name>`, a run-scoped directory outside the checkout, and
 consumers read them from there.
 Secrets stay outside the plan: list names in `required_env` (the run is blocked

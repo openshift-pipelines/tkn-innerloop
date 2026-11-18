@@ -34,8 +34,9 @@ tkn-innerloop run                                  # when the repository has one
 ```
 
 `run` picks the steps itself: steps that point at an external reference
-(`git-clone`, caches), steps provided by the local checkout, `finally` tasks, steps marked `(skip-local)` and steps that
-push, deploy or post to an API stay on the cluster. Add patterns for your own
+(`git-clone`), steps provided by the local checkout, `finally` tasks, steps marked `(skip-local)` and steps that
+push, deploy or post to an API stay on the cluster. tekton-caches steps are replaced
+by a local cache directory (see below). Add patterns for your own
 publishing tools in `.tekton-innerloop.yaml` at the repository root:
 
 ```yaml
@@ -99,6 +100,27 @@ checkout and never run. The directory they restore the source into
 the agent applies them in its script edits. It also evaluates `when` guards it can
 decide from parameters, and has to loop over a `matrix` task's combinations or
 leave it unresolved (`inspect` marks those tasks).
+
+The `cache-fetch` and `cache-upload` StepActions from
+[tekton-caches](https://github.com/openshift-pipelines/tekton-caches) are skipped
+locally. The runner recognises dedicated uses of `/ko-app/cache` and upstream
+cache scripts in known cache images. For unresolved references, it checks the
+action name, URL or path. Steps in the same
+PipelineRun that use the same image and workspace directory can share a persistent
+path such as `$CACHES/go-build-cache-<hash>`. Go cache directories configured
+through `GOCACHE`, `GOMODCACHE`, and `GOLANGCILINT_CACHE`, and npm download
+caches configured through `npm_config_cache` or `NPM_CONFIG_CACHE`, can share
+storage across images with the same runtime UID. Each cache directory must
+serve one tool. Mixed-use paths and caches used by different container UIDs
+stay at their original paths. Overlapping caches,
+relative paths, `node_modules`, caches containing a step's working directory,
+and cache paths in scripts with here-documents or command substitutions also
+stay in place.
+
+Remove the local caches with `tkn-innerloop cache clean`.
+
+If Docker owns files the host user cannot delete, cleanup uses an Alpine
+container and may pull the image.
 
 Without an argument, `run` looks in `.tekton/`, preferring PipelineRuns over
 Pipelines. It searches the whole repository only when `.tekton/` has no pipeline
@@ -184,7 +206,12 @@ branch name without the remote, `HEAD_SHA` and `HEAD_REF` the current commit and
 branch. Each is computed only when a selected step uses it. `RESULTS` is an empty
 directory outside the checkout (`/results` in containers), shared by the steps of
 one run and removed afterwards: task results are written there and read by the
-tasks that consume them.
+tasks that consume them. `CACHES` is the persistent tekton-caches directory
+(`/caches` in containers), under
+`${XDG_CACHE_HOME:-~/.cache}/tkn-innerloop/<repo>-<hash>/caches/`, and is only
+mounted when a step uses it. Host runs and each container runtime and image ID
+have separate storage. Go and npm caches shared across images use storage keyed
+by tool, container runtime, and UID.
 
 Steps keep running after a failure unless a later step depends on the failed one.
 A failure under `onError: continue` does not fail the run. On a step it is

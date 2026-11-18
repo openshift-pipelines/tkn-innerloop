@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 8,
   "pipeline": ".tekton/linter.yaml",
   "inputs": {
     ".tekton/linter.yaml": "3da4657bc002059fe3b56cf7127eeec93f7ea550890eb3274653ccc3a14c3ca9"
@@ -20,6 +20,7 @@
         "workingDir $(workspaces.source.path) -> mounted worktree $WORKSPACE",
         "Scans the working tree including uncommitted/untracked files; checkout step skipped because worktree is provided"
       ],
+      "optional_env": [],
       "script": "pip3 install codespell\ncodespell -d docs/content pkg test\n"
     },
     {
@@ -45,6 +46,7 @@
         "Diff base..HEAD replaced by git diff BASE_SHA against working tree unioned with untracked files via git ls-files --others --exclude-standard, keeping vendor and _test.go filters",
         "safe.directory set from $WORKSPACE instead of $(workspaces.source.path)"
       ],
+      "optional_env": [],
       "script": "#!/usr/bin/env bash\nset -eu\ngit config --global --add safe.directory \"$WORKSPACE\"\n\nbase_sha=\"$BASE_SHA\"\nif [[ -z \"$base_sha\" ]]; then\n  echo \"Base SHA is empty, skipping\"\n  exit 0\nfi\n\nfiles=$( { git diff --name-only \"$base_sha\" -- '*.go'; git ls-files --others --exclude-standard -- '*.go'; } | sort -u | grep -v '^vendor/' | grep '_test\\.go$' || true)\nif [ -z \"$files\" ]; then\n  echo \"No test files modified.\"\n  exit 0\nfi\n\nfailed=0\nwhile IFS= read -r file; do\n  [ -z \"$file\" ] && continue\n  [ ! -f \"$file\" ] && continue\n\n  bad_names=$(grep -n '^func Test[A-Za-z]*_[A-Za-z]' \"$file\" || true)\n  if [ -n \"$bad_names\" ]; then\n    echo \"ERROR: $file: test function names must use PascalCase (no underscores):\"\n    echo \"$bad_names\"\n    failed=1\n  fi\n\n  bad_asserts=$(grep -En '\\bt\\.(Errorf|Fatalf|Fatal|Error)\\(' \"$file\" || true)\n  if [ -n \"$bad_asserts\" ]; then\n    echo \"WARNING: $file: use gotest.tools/v3/assert instead of t.Errorf/t.Fatalf/t.Fatal/t.Error:\"\n    echo \"$bad_asserts\"\n  fi\ndone <<< \"$files\"\n\nif [ \"$failed\" -ne 0 ]; then\n  echo \"Fix violations above. See AGENTS.md for testing conventions.\"\n  exit 1\nfi\necho \"All modified test files pass convention checks.\"\n"
     },
     {
@@ -112,5 +114,9 @@
       "decision": "skip",
       "reason": "Outside requested scope"
     }
+  ],
+  "scope": [
+    "linters/codespell",
+    "linters/check-test-conventions"
   ]
 }

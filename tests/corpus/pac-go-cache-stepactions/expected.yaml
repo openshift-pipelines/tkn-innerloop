@@ -7,24 +7,38 @@ steps:
   go/cache-fetch:
     reference: true
     note: http resolver reference, contents not read
+    cache:
+      path: $(workspaces.source.path)/go-build-cache
+      workspace_dir: /go-build-cache
+      dir: $CACHES/go-shared/go-build-cache-c068ca2e75ed
   go/unittest:
     image: docker.io/golang:1.27
+    env_contains:
+    - $CACHES/go-shared/go-build-cache-c068ca2e75ed/cache
+    - $CACHES/go-shared/go-build-cache-c068ca2e75ed/mod
   go/lint:
     image: docker.io/golangci/golangci-lint:v2.15.0
+    env_contains:
+    - $CACHES/go-shared/go-build-cache-c068ca2e75ed/golangci-cache
   go/cache-upload:
     reference: true
     note: http resolver reference, contents not read
+    cache:
+      path: $(workspaces.source.path)/go-build-cache
+      workspace_dir: /go-build-cache
+      dir: $CACHES/go-shared/go-build-cache-c068ca2e75ed
 scope:
   local:
   - go/unittest
   - go/lint
   cluster:
     go/fetch-repo: external reference
-    go/cache-fetch: external reference
-    go/cache-upload: external reference
+    go/cache-fetch: remote cache action
+    go/cache-upload: remote cache action
 
 plan:
   run: [go/unittest, go/lint]
+  not_run: [go/cache-fetch, go/cache-upload]
 execute:
   steps: [go/unittest]
   timeout: 3600

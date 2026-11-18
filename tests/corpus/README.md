@@ -14,8 +14,8 @@ Real PipelineRuns and Pipelines from other repositories, used by
 
 In `expected.yaml`, `steps` lists every step ID in order. Each step's fields are
 compared when present: `reference`, `note` (substring), `image`, `defined_in`,
-`finally`, `step_action`, `matrix` and `script_contains`. `scope.local` and
-`scope.cluster` must match `auto_scope` exactly. A case that must fail has
+`finally`, `step_action`, `matrix`, `cache`, `script_contains` and `env_contains`.
+`scope.local` and `scope.cluster` must match `auto_scope` exactly. A case that must fail has
 `error`, a regular expression, in place of `steps` and `scope`.
 
 ## Model and execution checks

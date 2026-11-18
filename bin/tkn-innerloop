@@ -6,6 +6,7 @@ import difflib
 import hashlib
 import json
 import os
+import posixpath
 import queue
 import re
 import shlex
@@ -19,6 +20,7 @@ import textwrap
 import threading
 import time
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
@@ -31,7 +33,8 @@ SUBSTITUTION = re.compile(
 TEKTON_UNBOUND = re.compile(r"\$\((?:workspaces|params|context|steps|tasks|results)\.")
 PAC_UNBOUND = re.compile(r"\{\{")
 STARTED = ".tkn-innerloop-started"
-RUNNER_VARS = ("WORKSPACE", "BASE_SHA", "HEAD_SHA", "HEAD_REF", "BASE_REF", "RESULTS")
+RUNNER_VARS = ("WORKSPACE", "BASE_SHA", "HEAD_SHA", "HEAD_REF", "BASE_REF", "RESULTS", "CACHES")
+PLAN_VERSION = 8
 PAC_ANNOTATION = "pipelinesascode.tekton.dev/"
 # PaC placeholders with a local equivalent; the runner supplies these shell variables.
 PAC_BINDINGS = {
@@ -58,6 +61,22 @@ DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 TRUSTED_ARTIFACTS = "quay.io/konflux-ci/build-trusted-artifacts"
 GIT_CLONE_BUNDLE = re.compile(r"/task-git-clone[^/@]*@")
 PROVIDED = "provided by the local checkout"
+# openshift-pipelines/tekton-caches StepActions, by reference name, URL or path, or by their tool.
+CACHE_STEP = re.compile(r"(?:^|[/:])cache-(?:fetch|upload)(?:\.ya?ml)?$")
+CACHE_TOOL = re.compile(r"(?:exec[ \t]+)?/ko-app/cache[ \t]+(?:fetch|upload)(?:[ \t]+[^;|&<>()\n\x60]*)?")
+CACHE_IMAGES = {
+    "quay.io/openshift-pipeline/pipelines-cache-rhel9",
+    "ghcr.io/openshift-pipelines/tekton-caches/cache",
+    "ghcr.io/chmouel/tekton-caches/cache",
+}
+COMPLEX_SHELL = re.compile(r"(?<!<)<<(?!<)|\$\(|\x60")
+WORKSPACE_PATH = re.compile(r"^\$\(workspaces\.[\w.-]+\.path\)")
+CACHED = "remote cache action"
+SHARED_CACHE_ENV = {
+    "GOCACHE": "go", "GOMODCACHE": "go", "GOLANGCILINT_CACHE": "go",
+    "npm_config_cache": "npm", "NPM_CONFIG_CACHE": "npm",
+}
+SHARED_CACHE_PATH = re.compile(r"^\$(?:CACHES|\{CACHES\})/((go|npm)-shared/[\w.-]+)(?=/|$)")
 
 
 def style(text: str, color: str, stream=None) -> str:
@@ -99,6 +118,8 @@ def inspect_pipeline(path: Path) -> None:
         origin = f" · from {', '.join(map(input_label, source['defined_in']))}" if source["defined_in"] else ""
         if source["task_context"].get("matrix"):
             origin += " · matrix"
+        if source.get("cache", {}).get("dir"):
+            origin += f" · local cache {source['cache']['dir']}"
         if image:
             step_row("○ PENDING", key, image + origin, "2")
         else:
@@ -509,6 +530,291 @@ def bind_restored(value: object, paths: list[str]) -> object:
     return value
 
 
+def cache_only_script(script: str) -> bool:
+    lines = [
+        line for line in map(str.strip, script.splitlines())
+        if line and not line.startswith("#")
+    ]
+    while lines and re.fullmatch(r"set -[eu]+", lines[0]):
+        lines.pop(0)
+    return len(lines) == 1 and CACHE_TOOL.fullmatch(SUBSTITUTION.sub("placeholder", lines[0])) is not None
+
+
+def cache_reference(ref: object) -> bool:
+    if not isinstance(ref, dict):
+        return False
+    resolver = ref.get("resolver")
+    if not resolver:
+        name = local_ref(ref, "StepAction")
+        return bool(name and CACHE_STEP.fullmatch(name))
+    if not isinstance(resolver, str):
+        return False
+    field = {
+        "http": "url", "git": "pathInRepo", "bundles": "name", "hub": "name", "cluster": "name",
+    }.get(resolver)
+    params = ref.get("params") if isinstance(ref.get("params"), list) else []
+    return field is not None and any(
+        isinstance(param, dict) and param.get("name") == field
+        and isinstance(param.get("value"), str) and CACHE_STEP.search(param["value"])
+        for param in params
+    )
+
+
+def upstream_cache_script(name: str | None, image: object, script: str) -> bool:
+    if name not in ("cache-fetch", "cache-upload") or not isinstance(image, str):
+        return False
+    repository = re.split(r"[:@]", image, maxsplit=1)[0]
+    verb = name.removeprefix("cache-")
+    return repository in CACHE_IMAGES and bool(re.search(
+        rf"(?m)^[ \t]*(?:exec[ \t]+)?/ko-app/cache[ \t]+{verb}(?=[ \t]|$)",
+        script.replace("\\\n", " "),
+    ))
+
+
+def tekton_cache(step: dict, action_name: str | None = None) -> dict | None:
+    script = step.get("script")
+    command = step.get("command") or []
+    argv = [*command, *(step.get("args") or [])] if command else []
+    if not (
+        (
+            isinstance(script, str)
+            and (upstream_cache_script(action_name, step.get("image"), script) or cache_only_script(script))
+        )
+        or (script is None and argv[:2] in (["/ko-app/cache", "fetch"], ["/ko-app/cache", "upload"]))
+        or (script is None and not command and not step.get("image") and cache_reference(step.get("ref")))
+    ):
+        return None
+    given = step.get("params") if isinstance(step.get("params"), list) else []
+    # Upstream spells them CACHE_PATH and WORKING_DIR, copies cachePath and workingdir.
+    values = {
+        re.sub(r"[^a-z]", "", str(p.get("name", "")).lower()): p.get("value")
+        for p in given
+        if isinstance(p, dict)
+    }
+    path, workdir = values.get("cachepath"), values.get("workingdir")
+    return {
+        "path": path.rstrip("/") if isinstance(path, str) else "",
+        "working_dir": workdir if isinstance(workdir, str) else "",
+    }
+
+
+def cache_slot(tail: str, identity: tuple) -> str:
+    name = re.sub(r"[^\w.-]+", "-", tail.rsplit("/", 1)[-1]).strip("-.") or "cache"
+    suffix = hashlib.sha256(repr(identity).encode()).hexdigest()[:12]
+    return f"{name}-{suffix}"
+
+
+def workspace_paths(source: dict, task: str) -> dict[str, tuple]:
+    mounts = {
+        item["name"]: item.get("mountPath")
+        for item in source["task_defaults"].get("workspaces") or []
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    bindings = {name: ("task", task, f"$(workspaces.{name}.path)") for name in mounts}
+    for binding in source["task_context"].get("workspaces") or []:
+        if not (
+            isinstance(binding, dict)
+            and all(isinstance(binding.get(field), str) for field in ("name", "workspace"))
+            and isinstance(binding.get("subPath", ""), str)
+        ):
+            continue
+        bindings[binding["name"]] = ("workspace", binding["workspace"], binding.get("subPath", ""))
+    paths = {}
+    for name, location in bindings.items():
+        paths[f"$(workspaces.{name}.path)"] = location
+        mount = mounts.get(name) or f"/workspace/{name}"
+        if isinstance(mount, str) and mount.startswith("/") and "$" not in mount:
+            paths[posixpath.normpath(mount)] = location
+    return paths
+
+
+def cache_location(path: str, task: str, workspaces: dict[str, tuple]) -> tuple[tuple, str]:
+    match = WORKSPACE_PATH.match(path)
+    prefix = match[0] if match else ""
+    if not prefix and path.startswith("/"):
+        prefix = max(
+            (mount for mount in workspaces if path == mount or path.startswith(mount.rstrip("/") + "/")),
+            key=len, default="",
+        )
+    return workspaces.get(prefix, ("task", task, prefix)), path[len(prefix.rstrip("/")):]
+
+
+def workspace_location(scope: tuple, tail: str) -> tuple[tuple, str]:
+    if scope[0] == "workspace":
+        return scope[:2], posixpath.normpath(posixpath.join("/", scope[2].strip("/"), tail.lstrip("/")))
+    return scope, posixpath.normpath(tail)
+
+
+def cache_path_pattern(paths: Iterable[str], *, path_list: bool = False) -> str:
+    alternatives = "|".join(map(re.escape, sorted(paths, key=len, reverse=True)))
+    colon = ":" if path_list else ""
+    return rf"""(?<![^\s'"=;|&<>({colon}])(?:{alternatives})(?=$|[/\s'";|&<>(){colon}])"""
+
+
+def bind_caches(source: dict, script: str, slots: dict[str, str]) -> None:
+    path_pattern = cache_path_pattern(slots)
+    literal = re.compile(path_pattern)
+    env_paths = re.compile(cache_path_pattern(slots, path_list=True))
+    shell = re.compile(rf'''\\.|"[^"\\]*(?:\\.[^"\\]*)*"|'[^']*'|(?<![^\s;|&()])\#[^\n]*|{path_pattern}''')
+
+    def bind_shell(match: re.Match) -> str:
+        word = match[0]
+        if word.startswith("'"):
+            return literal.sub(lambda m: f"""'"$CACHES"'/{slots[m[0]]}""", word)
+        if word.startswith('"'):
+            return literal.sub(lambda m: f"$CACHES/{slots[m[0]]}", word)
+        if word in slots:
+            return f'"$CACHES"/{slots[word]}'
+        return word
+
+    step = source["step"].copy()
+    bound = shell.sub(bind_shell, script)
+    if bound != script:
+        step["script"] = bound
+
+    def bind_env(owner: dict) -> dict:
+        if not owner.get("env"):
+            return owner
+        return {
+            **owner,
+            "env": [
+                {**env, "value": env_paths.sub(lambda m: f"$CACHES/{slots[m[0]]}", env["value"])}
+                if isinstance(env, dict) and isinstance(env.get("value"), str) else env
+                for env in owner["env"]
+            ],
+        }
+
+    source["step"] = bind_env(step)
+    defaults = source["task_defaults"]
+    if defaults.get("stepTemplate"):
+        defaults["stepTemplate"] = bind_env(defaults["stepTemplate"])
+
+
+def cache_paths(location: tuple, directory: str, task: str, workspaces: dict[str, tuple]) -> list[str]:
+    if location[0] == "task":
+        _, owner, prefix = location
+        if owner != task:
+            return []
+        aliases = [alias for alias, binding in workspaces.items() if binding == location]
+        return [alias.rstrip("/") + directory for alias in aliases or [prefix]]
+    paths = []
+    for prefix, binding in workspaces.items():
+        owner, mount = workspace_location(binding, "")
+        if owner == location and directory.startswith(mount.rstrip("/") + "/"):
+            paths.append(prefix.rstrip("/") + "/" + posixpath.relpath(directory, mount))
+    return paths
+
+
+def local_caches(sources: dict[str, dict], pipeline: str, run: str) -> None:
+    cache_workdirs = {
+        key: source["cache"].pop("working_dir") for key, source in sources.items() if "cache" in source
+    }
+    if not any(source.get("cache", {}).get("path") for source in sources.values()):
+        return
+    tasks = {key: key.rsplit("/", 2)[-2] for key in sources}
+    workspaces = {key: workspace_paths(source, tasks[key]) for key, source in sources.items()}
+    workdirs = []
+    consumers = {}
+    for key, source in sources.items():
+        if "cache" not in source:
+            template = source["task_defaults"].get("stepTemplate") or {}
+            workdir = source["step"].get("workingDir") or template.get("workingDir") or ""
+            if workdir.startswith("/"):
+                workdir = posixpath.normpath(workdir)
+            owner, tail = cache_location(workdir, tasks[key], workspaces[key])
+            workdirs.append(workspace_location(owner, tail))
+            workdirs.extend(
+                workspace_location(binding, "") for binding in workspaces[key].values()
+                if binding[0] == "workspace"
+            )
+            step = source["step"]
+            script = step.get("script")
+            if script is None and step.get("command"):
+                script = adapted_script(step, [])
+            script = script if isinstance(script, str) else ""
+            env = [
+                (item.get("name"), item["value"])
+                for owner in (step, template)
+                for item in owner.get("env") or []
+                if isinstance(item, dict) and isinstance(item.get("value"), str)
+            ]
+            image = step.get("image")
+            complex_shell = bool(COMPLEX_SHELL.search(SUBSTITUTION.sub("", script)))
+            consumers[key] = (image if isinstance(image, str) else None, script, env, complex_shell)
+
+    declared = {}
+    for key, source in sources.items():
+        if path := source.get("cache", {}).get("path"):
+            scope, tail = cache_location(path, tasks[key], workspaces[key])
+            declared[key] = (tail, *workspace_location(scope, tail))
+    locations = {(location, directory) for _, location, directory in declared.values()}
+
+    replacements: dict[str, dict[str, str]] = {key: {} for key in consumers}
+    for key, (tail, location, directory) in declared.items():
+        cache = sources[key]["cache"]
+        working_dir = workspace_location(*cache_location(cache_workdirs[key], tasks[key], workspaces[key]))
+        # npm resolves node_modules from the project directory even without an explicit path
+        if (
+            cache["path"] == "/workspace"
+            or not re.fullmatch(r"/[\w./ -]+", tail)
+            or any(part in ("", ".", "..") for part in tail[1:].split("/"))
+            or "node_modules" in directory.split("/")
+            or any(
+                owner == location and (wd == directory or wd.startswith(directory + "/"))
+                for owner, wd in (*workdirs, working_dir)
+            )
+            or any(
+                owner == location and other != directory and (
+                    other.startswith(directory.rstrip("/") + "/")
+                    or directory.startswith(other.rstrip("/") + "/")
+                )
+                for owner, other in locations
+            )
+        ):
+            cache["path"] = ""
+            continue
+        users = {}
+        images = set()
+        shareable = location[0] == "workspace"
+        tools = set()
+        for other, (image, script, env, complex_shell) in consumers.items():
+            paths = cache_paths(location, directory, tasks[other], workspaces[other])
+            if not paths:
+                continue
+            in_script = re.search(cache_path_pattern(paths), script)
+            if in_script and complex_shell:
+                break
+            env_paths = re.compile(cache_path_pattern(paths, path_list=True))
+            env_users = [(name, value) for name, value in env if env_paths.search(value)]
+            if in_script or env_users:
+                users[other] = paths
+                images.add(image)
+                tools.update(SHARED_CACHE_ENV.get(name) for name, _ in env_users if isinstance(name, str))
+                shareable = shareable and not in_script and all(
+                    isinstance(name, str) and name in SHARED_CACHE_ENV
+                    and any(value == path or value.startswith(path + "/") for path in paths)
+                    and ":" not in value and ".." not in value.split("/")
+                    for name, value in env_users
+                )
+            if len(images) > 1 and (not shareable or len(tools) != 1):
+                break
+        else:
+            slot = cache_slot(directory, (pipeline, run, location, directory))
+            if len(images) > 1:
+                slot = f"{next(iter(tools))}-shared/{slot}"
+                cache["workspace_dir"] = directory
+            cache["dir"] = f"$CACHES/{slot}"
+            for other, paths in users.items():
+                replacements[other].update(dict.fromkeys(paths, slot))
+            continue
+        # Keep all consumers at the original path if any one cannot be relocated safely
+        cache["path"] = ""
+
+    for key, paths in replacements.items():
+        if paths:
+            bind_caches(sources[key], consumers[key][1], paths)
+
+
 def trusted_artifact(step: object) -> bool:
     return isinstance(step, dict) and str(step.get("image", "")).startswith(TRUSTED_ARTIFACTS)
 
@@ -566,7 +872,8 @@ def mapping(value, what: str) -> dict:
 
 
 def inventory(
-    path: Path, root: Path | None = None, definitions: Definitions | None = None
+    path: Path, root: Path | None = None, definitions: Definitions | None = None,
+    *, pipeline: str | None = None,
 ) -> dict[str, dict]:
     """Every step of the file's PipelineRuns (or, without any, its Pipelines).
 
@@ -597,6 +904,7 @@ def inventory(
     run_names = set()
     found = {}
     for number, raw in entries:
+        run_sources = {}
         metadata = mapping(raw.get("metadata"), f"Document {number}: metadata")
         run_name = metadata.get("name") or metadata.get("generateName")
         if multiple:
@@ -690,7 +998,7 @@ def inventory(
                 key = f"{task_name}/{step.get('name') or f'unnamed-{index}'}"
                 if multiple:
                     key = f"{run_name}/{key}"
-                if key in found:
+                if key in run_sources:
                     raise ValueError(f"Duplicate source step: {key}")
                 values = task_values(task, task_spec, run_spec, spec)
                 step_defined = set(task_defined)
@@ -727,8 +1035,10 @@ def inventory(
                             step_defined.add(where)
                 if not trusted_artifact(step):
                     step = bind_restored(step, restored)
-                found[key] = {
-                    "step": bind_image(step, values),
+                step = bind_image(step, values)
+                cache = None if whole_task else tekton_cache(step, action["name"] if action else None)
+                run_sources[key] = {
+                    "step": step,
                     "pipeline_context": pipeline_context,
                     "task_context": {k: v for k, v in task.items() if k != "taskSpec"},
                     "task_defaults": {
@@ -738,9 +1048,13 @@ def inventory(
                     "defined_in": sorted(step_defined),
                 }
                 if action:
-                    found[key]["step_action"] = action
+                    run_sources[key]["step_action"] = action
+                if cache is not None:
+                    run_sources[key]["cache"] = cache
                 if step_note:
-                    found[key]["reference_note"] = step_note
+                    run_sources[key]["reference_note"] = step_note
+        local_caches(run_sources, pipeline or own, run_name if isinstance(run_name, str) else "")
+        found.update(run_sources)
     if pac_profile([raw for _, raw in entries]):
         found = bind_pac(found)
     return found
@@ -819,15 +1133,33 @@ def select_steps(steps: list[dict], selection: str | None) -> list[dict]:
     return [s for s in steps if s in selected]
 
 
+def plan_scope(sources: dict[str, dict], selection: str | None) -> list[str]:
+    selected = select_steps([{"id": key} for key in sources], selection)
+    ids = []
+    for step in selected:
+        key = step["id"]
+        if "cache" not in sources[key]:
+            ids.append(key)
+        elif selection is not None:
+            raise ValueError(f"{key}: tekton-caches actions cannot run locally")
+    return ids
+
+
 def plan_sources(plan: dict, root: Path) -> dict[str, dict]:
     """The steps a plan was built from: its tkn pac resolve output, or the pipeline itself."""
     resolved = plan.get("resolved")
-    return inventory(plan_input(root, resolved or plan["pipeline"], resolved), root)
+    return inventory(
+        plan_input(root, resolved or plan["pipeline"], resolved), root, pipeline=plan["pipeline"]
+    )
 
 
 def validate_plan(plan: dict, root: Path) -> dict:
-    if not isinstance(plan, dict) or plan.get("version") != 1:
-        raise ValueError("Expected an execution plan with version 1")
+    if not isinstance(plan, dict) or not isinstance(plan.get("version"), int):
+        raise ValueError(f"Expected an execution plan with version {PLAN_VERSION}")  # noqa: TRY004
+    if plan["version"] != PLAN_VERSION:
+        raise ValueError(
+            "Stale plan: made by another tkn-innerloop version; regenerate the plan"
+        )
     pipeline = plan.get("pipeline")
     if not isinstance(pipeline, str):
         raise TypeError("Plan needs a repository-relative pipeline path")
@@ -866,6 +1198,8 @@ def validate_plan(plan: dict, root: Path) -> dict:
             raise ValueError(f"{key}: explain the decision")
         if step["decision"] != "run":
             continue
+        if "cache" in sources[key]:
+            raise ValueError(f"{key}: tekton-caches actions cannot run locally")
         dependencies = step.get("depends_on")
         earlier = {
             s["id"] for s in steps[: steps.index(step)] if s["decision"] == "run"
@@ -1190,7 +1524,8 @@ For skip/unresolved, only id, decision and reason are required.
 Do NOT return a script field. The CLI extracts the original script verbatim and
 applies edits in order. Each old fragment must match exactly ONCE in the current
 script, including whitespace. Use edits: [] for unchanged scripts. For command
-steps the baseline is Python shlex.join(command + args) followed by a newline.
+steps use the inventory's script if present. Otherwise the baseline is
+Python shlex.join(command + args) followed by a newline.
 Preserve every unrelated source line. Do not add unrelated downloads or tools.
 Prefer original commands, flags and installation versions in the original image.
 Preserve command/args, env, workingDir and interpreter semantics. Inspect helper
@@ -1201,10 +1536,11 @@ source files being tested. Do not list directories or nonexistent paths in input
 Keep unit test code out of inputs so editing it permits reuse.
 WORKSPACE is the worktree root (container: /workspace). BASE_SHA is computed at
 execution with git merge-base HEAD <base-ref>. The runner also supplies HEAD_SHA,
-HEAD_REF (current branch), BASE_REF (base branch name) and RESULTS, an empty
-directory outside the repository shared by every step of one run. WORKSPACE,
-BASE_SHA, HEAD_SHA, HEAD_REF, BASE_REF and RESULTS are supplied automatically: never
-put any of them in env or required_env.
+HEAD_REF (current branch), BASE_REF (base branch name), RESULTS, an empty
+directory outside the repository shared by every step of one run, and CACHES, a
+persistent cache directory outside the repository. WORKSPACE, BASE_SHA, HEAD_SHA,
+HEAD_REF, BASE_REF, RESULTS and CACHES are supplied automatically: never put any of
+them in env or required_env.
 Task results go through RESULTS, never into WORKSPACE: in the producing step
 replace $(results.NAME.path) with "$RESULTS/<pipeline task>/NAME" and create that
 directory first; in a consumer, read $(tasks.T.results.NAME) with
@@ -1249,6 +1585,13 @@ mark the step unresolved. Inspect pipeline_context annotations for follow-up
 PipelineRuns (on-pipelinerun) and treat them as dependencies.
 """
 
+CACHE_PROMPT = """tekton-caches cache-fetch and cache-upload steps are outside the scope.
+Treat them as optional prerequisites. Some cache paths are already bound to
+$CACHES/<name> for local reuse. Preserve those bindings and leave unbound caches
+at the paths used by their tools. Preserve workspace subPath bindings so that
+steps using aliases of the same cache directory still share it.
+"""
+
 KONFLUX_PROMPT = """Konflux git clone and trusted-artifact steps are outside the scope because
 the mounted worktree already is the source they would restore; paths they restored
 into are bound to $WORKSPACE. Treat them as completed prerequisites, not as missing
@@ -1265,6 +1608,8 @@ def plan_prompt(relative: str, sources: dict, selected_ids: list[str], pac: bool
     prompt = PLAN_PROMPT + (PAC_PROMPT if pac else "")
     if any(provided_by_checkout(source) for source in sources.values()):
         prompt += KONFLUX_PROMPT
+    if any("cache" in source for source in sources.values()):
+        prompt += CACHE_PROMPT
     prompt += f"\nPipeline: {relative}\nRequested scope: {json.dumps(selected_ids)}\n"
     prompt += f"Available step IDs: {json.dumps(list(sources))}\n"
     prompt += f"Requested source inventory:\n{json.dumps({key: sources[key] for key in selected_ids}, separators=(',', ':'))}\n"
@@ -1320,7 +1665,7 @@ def assemble_plan(
         if resolved:
             known.add(resolved)
         plan = {
-            "version": 1,
+            "version": PLAN_VERSION,
             "pipeline": relative,
             **({"resolved": resolved} if resolved else {}),
             "inputs": {
@@ -1336,8 +1681,12 @@ def assemble_plan(
         ):
             raise ValueError("Agent returned steps outside the requested scope")
         plan["steps"].extend(
-            {"id": key, "decision": "skip", "reason": "Outside requested scope"}
-            for key in sources
+            {
+                "id": key,
+                "decision": "skip",
+                "reason": "Remote cache action" if "cache" in source else "Outside requested scope",
+            }
+            for key, source in sources.items()
             if key not in selected_ids
         )
         for step in plan["steps"]:
@@ -1371,12 +1720,16 @@ def build_plan(
     Only structural rejections are retried. A valid plan that leaves steps unresolved is
     the agent's judgment and is returned as is. Timeouts and agent failures are not retried.
     """
-    if not shutil.which("pi"):
-        raise ValueError("Install the pi coding agent to generate a plan")
     relative = str(path.relative_to(root))
     source = source or path
     resolved = source.name if source != path else None
-    sources = inventory(source, root)
+    sources = inventory(source, root, pipeline=relative)
+    if not selected_ids:
+        return assemble_plan(
+            {"inputs": [], "steps": []}, root, relative, sources, selected_ids, resolved, extra_inputs
+        )
+    if not shutil.which("pi"):
+        raise ValueError("Install the pi coding agent to generate a plan")
     pac = pac_profile([s["pipeline_context"] for s in sources.values()])
     prompt = plan_prompt(relative, sources, selected_ids, pac)
     chosen = agent_model(model)
@@ -1420,9 +1773,8 @@ def generate(args: argparse.Namespace) -> int:
     root = repo_root(path.parent)
     relative = str(path.relative_to(root))
     source, extra = plan_source(root, path)
-    sources = inventory(source, root)
-    selected = select_steps([{"id": key} for key in sources], args.steps)
-    selected_ids = [s["id"] for s in selected]
+    sources = inventory(source, root, pipeline=relative)
+    selected_ids = plan_scope(sources, args.steps)
     heading(
         "Build your local plan",
         f"{relative} · {len(selected_ids)} steps · {agent_model(args.model)}",
@@ -1451,14 +1803,18 @@ def expand(value: str, bindings: dict[str, str]) -> str:
     )
 
 
+def uses_var(steps: list[dict], name: str) -> bool:
+    used = json.dumps([[s["script"], s["working_dir"], s["env"]] for s in steps])
+    return re.search(rf"\$(?:{name}\b|\{{{name}\b)", used) is not None
+
+
 def runner_bindings(
-    root: Path, steps: list[dict], workspace: str, base: str | None, results: str = ""
+    root: Path, steps: list[dict], workspace: str, base: str | None, results: str = "",
 ) -> dict[str, str]:
     """Values for the runner variables, computed only when a selected step uses them."""
-    used = json.dumps([[s["script"], s["working_dir"], s["env"]] for s in steps])
 
     def wanted(name: str) -> bool:
-        return re.search(rf"\$(?:{name}\b|\{{{name}\b)", used) is not None
+        return uses_var(steps, name)
 
     bindings = dict.fromkeys(RUNNER_VARS, "")
     bindings["WORKSPACE"] = workspace
@@ -1511,7 +1867,27 @@ def report_blocked(plan: dict, unresolved: list[dict], args: argparse.Namespace)
     return 1
 
 
-def hand_back_ownership(runtime: str, root: Path, step: dict, results: Path) -> None:
+def caches_dir(root: Path) -> Path:
+    """The persistent directory standing in for a checkout's tekton-caches caches."""
+    return cache_dir(root) / "caches"
+
+
+def prepare_caches(root: Path, runtime: str, container_key: str) -> Path:
+    private = caches_dir(root)
+    private.mkdir(parents=True, exist_ok=True)
+    private.chmod(0o700)
+    data = private / "data"
+    data.mkdir(exist_ok=True)
+    data.chmod(0o700)
+    owner = f"{os.getuid()}:{os.getgid()}" if runtime == "host" else container_key
+    suffix = hashlib.sha256(owner.encode()).hexdigest()[:16]
+    shared = data / f"{runtime}-{suffix}"
+    shared.mkdir(exist_ok=True)
+    shared.chmod(0o777)
+    return shared
+
+
+def hand_back_ownership(runtime: str, root: Path, step: dict, results: Path, image: str) -> None:
     """Docker keeps the container's uid, so a step can leave root-owned files in the checkout.
 
     Give them back to the invoking user, using the step's own image as root. Rootless
@@ -1524,7 +1900,8 @@ def hand_back_ownership(runtime: str, root: Path, step: dict, results: Path) -> 
         subprocess.run(
             [
                 runtime, "run", "--rm", "--user", "0", "-v", f"{root}:/workspace:Z",
-                "-v", f"{results}:/results:Z", "--entrypoint", step["shell"], step["image"], "-c",
+                "-v", f"{results}:/results:Z",
+                "--entrypoint", step["shell"], image, "-c",
                 f"find /workspace /results ! -user {uid} -exec chown {uid}:{gid} {{}} +",
             ],
             check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120,
@@ -1533,17 +1910,97 @@ def hand_back_ownership(runtime: str, root: Path, step: dict, results: Path) -> 
         pass
 
 
-def note_image_drift(runtime: str, root: Path, image: str) -> None:
-    """Tell the user when a tag now points at a different image than on the last run."""
+def local_image_id(runtime: str, image: str) -> str:
     try:
         result = subprocess.run(
             [runtime, "image", "inspect", "--format", "{{.Id}}", image],
             check=False, capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return
+        return ""
     current = result.stdout.strip() if isinstance(result.stdout, str) else ""
-    if result.returncode or not current:
+    return current if not result.returncode else ""
+
+
+def cache_image_id(runtime: str, image: str, timeout: float) -> str:
+    current = local_image_id(runtime, image)
+    if not current:
+        subprocess.run([runtime, "pull", image], check=True, timeout=timeout)
+        current = local_image_id(runtime, image)
+    if not current:
+        raise ValueError(f"{runtime} could not determine the image ID for {image}")
+    return current
+
+
+def cache_image_uid(runtime: str, image_id: str, timeout: float) -> int:
+    result = subprocess.run(
+        [runtime, "image", "inspect", "--format", "{{.Config.User}}", image_id],
+        capture_output=True, text=True, timeout=timeout, check=True,
+    )
+    user = result.stdout.strip().partition(":")[0]
+    if user and not user.isdecimal():
+        result = subprocess.run(
+            [runtime, "run", "--rm", "--network", "none", "--entrypoint", "id", image_id, "-u"],
+            capture_output=True, text=True, timeout=timeout, check=True,
+        )
+        user = result.stdout.strip()
+    return int(user or "0")
+
+
+def shared_tool_caches(
+    runtime: str, steps: list[dict], sources: dict, timeout: float
+) -> tuple[list[dict], dict[str, str], dict[str, dict[str, int]]]:
+    image_ids: dict[str, str] = {}
+    image_uids: dict[str, int] = {}
+    cache_users: dict[str, set[int]] = {}
+    uses = {}
+    for step in steps:
+        refs = {
+            name: match for name, value in step["env"].items()
+            if (match := SHARED_CACHE_PATH.match(value)) and SHARED_CACHE_ENV.get(name) == match[2]
+        }
+        if not refs:
+            continue
+        image = step["image"]
+        if image not in image_ids:
+            image_ids[image] = cache_image_id(runtime, image, timeout)
+            image_uids[image] = cache_image_uid(runtime, image_ids[image], timeout)
+        uid = image_uids[image]
+        uses[step["id"]] = refs
+        for ref in refs.values():
+            cache_users.setdefault(ref[1], set()).add(uid)
+
+    if not uses:
+        return steps, {}, {}
+
+    incompatible = {slot for slot, users in cache_users.items() if len(users) > 1}
+    workspace_paths = {
+        cache["dir"].removeprefix("$CACHES/"): cache["workspace_dir"]
+        for source in sources.values()
+        if "workspace_dir" in (cache := source.get("cache", {}))
+    }
+    if incompatible - workspace_paths.keys():
+        raise ValueError("Shared caches used by different container UIDs need a workspace path")
+    if incompatible:
+        stage("Caches", "using the workspace for caches shared by different container UIDs", "33", "!")
+
+    adapted = []
+    shared_uids: dict[str, dict[str, int]] = {}
+    for step in steps:
+        env = dict(step["env"])
+        for name, ref in uses.get(step["id"], {}).items():
+            if ref[1] in incompatible:
+                env[name] = "$WORKSPACE" + workspace_paths[ref[1]] + env[name][ref.end():]
+            else:
+                shared_uids.setdefault(step["id"], {})[ref[2]] = image_uids[step["image"]]
+        adapted.append({**step, "env": env})
+    return adapted, image_ids, shared_uids
+
+
+def note_image_drift(runtime: str, root: Path, image: str, current: str = "") -> None:
+    """Tell the user when a tag now points at a different image than on the last run."""
+    current = current or local_image_id(runtime, image)
+    if not current:
         return
     state = cache_dir(root) / "images.json"
     try:
@@ -1632,8 +2089,12 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
         raise ValueError("Only required_env or optional_env variables may be forwarded")
     sources = plan_sources(plan, root)
     host = args.runtime == "host"
+    pinned_images, shared_uids = {}, {}
+    if not host:
+        steps, pinned_images, shared_uids = shared_tool_caches(args.runtime, steps, sources, args.timeout)
     bindings = runner_bindings(
-        root, steps, str(root) if host else "/workspace", args.base, str(results) if host else "/results"
+        root, steps, str(root) if host else "/workspace", args.base,
+        str(results) if host else "/results",
     )
     if args.runtime == "host":
         print(
@@ -1670,6 +2131,25 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
             )
             not_run.append(step["id"])
             continue
+        image = step["image"]
+        image_id = pinned_images.get(image, "")
+        caches = None
+        shared_mounts = []
+        if uses_var([step], "CACHES"):
+            if not host and not image_id:
+                try:
+                    image_id = cache_image_id(args.runtime, image, args.timeout)
+                except (OSError, subprocess.SubprocessError, ValueError) as exc:
+                    print(f"  ✗ {step['id']}: {exc}", file=sys.stderr)
+                    failed.append(step["id"])
+                    continue
+            caches = prepare_caches(root, args.runtime, image_id)
+            for tool, uid in shared_uids.get(step["id"], {}).items():
+                directory = f"{tool}-shared"
+                (caches / directory).mkdir(exist_ok=True)
+                shared = prepare_caches(root, args.runtime, f"{tool}:{uid}")
+                shared_mounts.extend(["-v", f"{shared}:/caches/{directory}:z"])
+        bindings["CACHES"] = (str(caches) if host else "/caches") if caches else ""
         env = dict(bindings)
         env.update(
             {
@@ -1706,6 +2186,8 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
                 f"{root}:/workspace:Z",
                 "-v",
                 f"{results}:/results:Z",
+                *(["-v", f"{caches}:/caches:Z"] if caches else []),
+                *shared_mounts,
                 "-w",
                 working_dir,
             ]
@@ -1719,7 +2201,7 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
                 cmd.extend(
                     ["-e", name if name in step["required_env"] or name in passed_optional else f"{name}={value}"]
                 )
-            cmd.extend(["--entrypoint", step["shell"], step["image"], *shell_args])
+            cmd.extend(["--entrypoint", step["shell"], image_id or image, *shell_args])
             process_env = os.environ.copy()
             cwd = str(root)
         print(style(f"\n  ▶ [{index}/{len(steps)}] {step['id']}", "1;36"), flush=True)
@@ -1764,7 +2246,7 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.communicate()
-            hand_back_ownership(args.runtime, root, step, results)
+            hand_back_ownership(args.runtime, root, step, results, image_id or image)
             if isinstance(interrupted, KeyboardInterrupt):
                 print(
                     style(f"  ✗ {step['id']}: interrupted", "1;31", sys.stderr),
@@ -1777,9 +2259,9 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
             )
             failed.append(step["id"])
             continue
-        hand_back_ownership(args.runtime, root, step, results)
+        hand_back_ownership(args.runtime, root, step, results, image_id or image)
         if args.runtime != "host":
-            note_image_drift(args.runtime, root, step["image"])
+            note_image_drift(args.runtime, root, image, image_id)
         # Without the marker the shell never ran (pull error, missing shell), so onError does not apply.
         continuation = (
             continues_on_error(sources[step["id"]])
@@ -1892,7 +2374,9 @@ def auto_scope(
             [str(step.get("script", "")), *map(str, step.get("command", []) or []),
              *map(str, step.get("args", []) or [])]
         )
-        if source["finally"]:
+        if "cache" in source:
+            left[key] = CACHED
+        elif source["finally"]:
             left[key] = "runs after the pipeline"
         elif provided_by_checkout(source):
             left[key] = PROVIDED
@@ -2112,6 +2596,36 @@ def ensure_plan(
     return out, plan
 
 
+def clean_caches(args: argparse.Namespace) -> int:
+    """Remove the checkout's local caches; the next run starts them cold."""
+    path = caches_dir(repo_root(Path(args.repo)))
+    if not path.exists():
+        print(f"No local caches in {home_relative(path)}")
+        return 0
+    try:
+        shutil.rmtree(path)
+    except PermissionError:
+        if shutil.which("podman") and os.getuid() != 0:
+            subprocess.run(
+                ["podman", "unshare", "rm", "-rf", str(path)],
+                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        if path.exists():
+            if not shutil.which("docker"):
+                raise
+            subprocess.run(
+                [
+                    "docker", "run", "--rm", "--user", "0", "--network", "none",
+                    "-v", f"{path}:/cache:Z", "--entrypoint", "/bin/rm",
+                    "docker.io/library/alpine:3", "-rf", "/cache/data",
+                ],
+                check=True,
+            )
+            shutil.rmtree(path)
+    print(f"Removed local caches in {home_relative(path)}")
+    return 0
+
+
 def run_command(args: argparse.Namespace) -> int:
     """run: a saved plan.json runs as is; a pipeline (or nothing) is converted if needed first.
 
@@ -2125,20 +2639,21 @@ def run_command(args: argparse.Namespace) -> int:
     relative = str(pipeline.relative_to(root))
     heading("Tekton inner-loop", relative)
     source, extra = plan_source(root, pipeline, getattr(args, "refresh", False))
-    sources = inventory(source, root)
+    sources = inventory(source, root, pipeline=relative)
     explicit = bool(args.steps)
     auto, left = auto_scope(sources, cluster_patterns(root))
-    wanted = [s["id"] for s in select_steps([{"id": k} for k in sources], args.steps)] if args.steps else []
-    scope = [key for key in sources if (key in wanted if explicit else key in auto)]
+    scope = plan_scope(sources, args.steps) if explicit else auto
     if not scope:
         raise ValueError("Nothing in this pipeline can run locally; every step is cluster-only")
-    outside = [key for key in left if key not in scope and left[key] != PROVIDED]
+    outside = [key for key in left if key not in scope and left[key] not in (PROVIDED, CACHED)]
     provided = sum(left[key] == PROVIDED and key not in scope for key in left)
+    cached = sum(left[key] == CACHED and key not in scope for key in left)
     shown = ", ".join(outside[:3]) + (f" +{len(outside) - 3}" if len(outside) > 3 else "")
     stage(
         "Scope",
         f"{len(scope)} of {len(sources)} steps run locally"
         + (f" · {provided} provided by the checkout" if provided else "")
+        + (f" · {cached} remote cache actions skipped" if cached else "")
         + (f" · cluster-only: {shown}" if outside else ""),
     )
     plan_file, plan = ensure_plan(
@@ -2237,6 +2752,9 @@ def main() -> int:
     run.add_argument(
         "--refresh", action="store_true", help="Regenerate the cached plan"
     )
+    cache = sub.add_parser("cache", help="Manage the local caches that replace tekton-caches steps")
+    cache.add_argument("action", choices=("clean",))
+    cache.add_argument("--repo", default=".")
     skills = sub.add_parser("skills", help="Show or install the agent skill")
     skills.add_argument(
         "action", choices=("show", "install"), nargs="?", default="show"
@@ -2274,6 +2792,8 @@ def main() -> int:
                 print_diff(plan, root)
         elif args.cmd == "run":
             return run_command(args)
+        elif args.cmd == "cache":
+            return clean_caches(args)
         elif args.action == "show":
             print(SKILL_PATH.read_text())
         else:
