@@ -117,6 +117,54 @@ commands. The runner does not emulate Tekton's scheduler, sidecars or result
 passing. The agent has to account for those or leave the step unresolved. The
 inputs the agent lists in the plan decide which file changes make it stale.
 
+## Run it before each commit
+
+The repository ships a [pre-commit](https://pre-commit.com) hook. Add it to
+`.pre-commit-config.yaml` in the repository you want to check, and pass the
+pipeline file and any other `run` options as `args`:
+
+```yaml
+repos:
+  - repo: https://github.com/openshift-pipelines/tkn-innerloop
+    rev: main
+    hooks:
+      - id: tkn-innerloop
+        args: [.tekton/linter.yaml, --steps, "codespell,yamllint"]
+```
+
+Then pin `rev` to the current commit and install the git hook:
+
+```sh
+pre-commit autoupdate --bleeding-edge
+pre-commit install
+```
+
+pre-commit installs tkn-innerloop in its own environment. You still need pi,
+and Podman or Docker, on your machine. Before each commit, pre-commit sets
+aside the changes you have not staged, so the checks see what you are about to
+commit. Any check that fails stops the commit, and so does exit code `2`, when
+some steps stayed unresolved. Narrow the hook with `--steps` to the checks that
+run.
+
+Run `tkn-innerloop run` with the same arguments once by hand before installing
+the hook, so the agent writes the plan outside of a commit. After that each
+commit reuses the plan with no model call, until the pipeline or its helpers
+change. To commit once without the checks, use `SKIP=tkn-innerloop git commit`.
+
+If tkn-innerloop is already installed with uv, a local hook avoids the second
+copy:
+
+```yaml
+repos:
+  - repo: local
+    hooks:
+      - id: tkn-innerloop
+        name: tkn-innerloop
+        entry: tkn-innerloop run .tekton/linter.yaml
+        language: system
+        pass_filenames: false
+```
+
 ## Pipelines and references
 
 A file can hold PipelineRuns, or Pipelines when it has no PipelineRun, with the

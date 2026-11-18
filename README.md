@@ -70,6 +70,9 @@ tkn-innerloop validate /tmp/plan.json --diff
 tkn-innerloop run /tmp/plan.json
 ```
 
+To run the checks before every commit, add the
+[pre-commit hook](docs/usage.md#run-it-before-each-commit).
+
 `tkn-innerloop skills install` copies a skill into `.agents/skills/` so your
 coding agent knows how to use the tool in that repository.
 

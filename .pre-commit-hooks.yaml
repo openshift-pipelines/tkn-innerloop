@@ -1,0 +1,7 @@
+- id: tkn-innerloop
+  name: tkn-innerloop
+  description: Run the checks from a Tekton pipeline locally before each commit
+  entry: tkn-innerloop run
+  language: python
+  pass_filenames: false
+  require_serial: true
