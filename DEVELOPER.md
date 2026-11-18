@@ -84,3 +84,10 @@ the inlined copy first and upload that:
 python3 docs/art/build.py
 sharec dist/presentation.public.md -p <project> -n presentation.md --replace -y --public-ttl 0
 ```
+
+## The banner
+
+`docs/art/banner.html` draws the 1280×640 picture used as the GitHub social
+preview and the website's link preview. The command to render it to
+`docs/site/social.png` is at the top of the file. Upload the PNG under
+Settings, General, Social preview.

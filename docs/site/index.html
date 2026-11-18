@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tkn-innerloop: run your Tekton checks before you push</title>
 <meta name="description" content="tkn-innerloop reads the Tekton pipeline in your repository and runs the same checks on your machine, in the same container images, before you push.">
+<meta property="og:title" content="tkn-innerloop">
+<meta property="og:description" content="Run your Tekton pipeline’s checks on your laptop, before you push.">
+<meta property="og:image" content="https://openshift-pipelines.github.io/tkn-innerloop/social.png">
+<meta property="og:url" content="https://openshift-pipelines.github.io/tkn-innerloop/">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@500;700;900&family=Red+Hat+Mono:wght@400;600&family=Red+Hat+Text:ital,wght@0,400;0,500;0,700;1,400&display=swap">
@@ -264,6 +269,29 @@ tkn-innerloop skills install</pre>
   </div>
   <p>Run <code>uv tool upgrade tkn-innerloop</code> later to pick up new versions. The
     <a href="https://github.com/openshift-pipelines/tkn-innerloop/blob/main/docs/usage.md">usage guide</a> covers every option.</p>
+
+  <h3 id="pre-commit">Check every commit</h3>
+  <p>With <a href="https://pre-commit.com">pre-commit</a>, the checks run each time you commit, and a
+    failing check stops the commit. Add this to <code>.pre-commit-config.yaml</code>, with your own
+    pipeline file and steps:</p>
+  <div class="term term-light" role="group" aria-label="pre-commit configuration">
+<pre>repos:
+  - repo: https://github.com/openshift-pipelines/tkn-innerloop
+    rev: main
+    hooks:
+      - id: tkn-innerloop
+        args: [.tekton/linter.yaml, --steps, "codespell,yamllint"]</pre>
+  </div>
+  <div class="term term-light" role="group" aria-label="pre-commit setup commands">
+<pre><span class="cm"># write the plan once, outside a commit</span>
+tkn-innerloop run .tekton/linter.yaml --steps codespell,yamllint
+
+<span class="cm"># pin the hook to the current version and turn it on</span>
+pre-commit autoupdate --bleeding-edge
+pre-commit install</pre>
+  </div>
+  <p>After that, commits reuse the saved plan and take a few seconds. To commit once without the
+    checks, run <code>SKIP=tkn-innerloop git commit</code>.</p>
 </section>
 </main>
 

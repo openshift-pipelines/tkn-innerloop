@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!-- GitHub social preview. Render with:
+     google-chrome-stable --headless=new --hide-scrollbars --window-size=1280,640 \
+       --virtual-time-budget=4000 --screenshot=docs/site/social.png docs/art/banner.html -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tkn-innerloop banner</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@700;900&family=Red+Hat+Mono:wght@500;600&family=Red+Hat+Text:wght@400;500&display=swap">
+<style>
+  :root { --paper: #edf0f2; --paper-2: #e2e7eb; --ink: #172231; --muted: #536173; --signal: #f2b630; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1280px; height: 640px; overflow: hidden; }
+  body { background: var(--paper); color: var(--ink); font-family: "Red Hat Text", sans-serif; padding: 72px 80px; position: relative; }
+  .id { display: flex; align-items: center; gap: 28px; }
+  .id img { width: 112px; height: 112px; }
+  h1 { font: 900 84px/1 "Red Hat Display", sans-serif; letter-spacing: -0.035em; margin: 0; }
+  p { font: 500 34px/1.3 "Red Hat Text", sans-serif; color: var(--muted); margin: 30px 0 0; max-width: 900px; }
+  .track { position: absolute; left: 80px; right: 80px; bottom: 150px; height: 4px; background: var(--ink); border-radius: 2px; }
+  .st { position: absolute; top: -12px; width: 28px; height: 28px; border-radius: 50%; background: var(--paper); border: 5px solid var(--ink); }
+  .st.on { background: var(--signal); }
+  .drop { position: absolute; top: 16px; height: 56px; border-left: 4px dotted var(--signal); }
+  .chip { position: absolute; top: 76px; transform: translateX(-50%); font: 600 22px "Red Hat Mono", monospace; background: var(--signal); padding: 6px 14px; border-radius: 6px; white-space: nowrap; }
+  .label { position: absolute; top: -48px; font: 500 20px "Red Hat Mono", monospace; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="id">
+    <img src="../site/logo.svg" alt="">
+    <h1>tkn-innerloop</h1>
+  </div>
+  <p>Run your Tekton pipeline’s checks<br>on your laptop, before you push.</p>
+  <div class="track" id="track"><span class="label" style="right:0">on the cluster</span></div>
+  <script>
+    const t = document.getElementById("track"), n = 15, on = {2: "codespell", 6: "check-test-conventions"};
+    for (let i = 0; i < n; i++) {
+      const x = (i + 0.5) / n * 100, s = document.createElement("span");
+      s.className = "st" + (on[i] ? " on" : ""); s.style.left = `calc(${x}% - 14px)`; t.append(s);
+      if (on[i]) {
+        const d = document.createElement("span"); d.className = "drop"; d.style.left = `calc(${x}% - 2px)`; t.append(d);
+        const c = document.createElement("span"); c.className = "chip"; c.textContent = on[i]; c.style.left = `${x}%`; t.append(c);
+      }
+    }
+  </script>
+</body>
+</html>
