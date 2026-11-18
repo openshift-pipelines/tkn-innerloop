@@ -2,7 +2,7 @@
 
 Each case vendors only the YAML it needs, copied unchanged at its original path under
 `<case>/repo/`. Tekton bundle objects the case references are mirrored under
-`<case>/bundles/` by `tests/corpus-bundles`. All sources are Apache-2.0 licensed.
+`<case>/bundles/` by `hack/corpus-bundles`. All sources are Apache-2.0 licensed.
 
 | Case | Repository | Commit | Files | Licence |
 | --- | --- | --- | --- | --- |

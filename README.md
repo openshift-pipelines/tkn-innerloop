@@ -17,15 +17,14 @@ have unresolved requirements. The CLI handles validation and execution.
 
 ## Try it
 
-Install Python 3.10+, PyYAML, the [pi coding agent](https://github.com/earendil-works/pi),
+Install Python 3.11+, the [pi coding agent](https://github.com/earendil-works/pi),
 and Docker or Podman. Authenticate a provider in pi. Conversion defaults to Haiku;
 use `--model` or `TKN_INNERLOOP_AI_MODEL` to choose another model. Thinking is
 off unless the model name ends in a pi level such as
 `github-copilot/claude-sonnet-5.5:minimal`; some models refuse to turn it off.
 
 ```sh
-python3 -m pip install -r requirements.txt
-export PATH="$PWD/bin:$PATH"
+python3 -m pip install -e .                        # or: export PATH="$PWD/bin:$PATH"
 cd /path/to/your/repository
 
 tkn-innerloop run .tekton/go.yaml                  # convert if needed, then run
@@ -247,10 +246,15 @@ Conversion and image pulls are separate setup costs. The recording uses cached
 source images; measured rerun times include any setup still in the scripts.
 There is no general coverage percentage or fixed runtime claim.
 
+The code lives in `src/tkn_innerloop/`; `bin/tkn-innerloop` runs it straight from
+the checkout. `make test` runs the unit tests and `make lint` runs ruff and
+shellcheck. `.tekton/ci.yaml` is this repository's own pipeline, and the
+pre-commit hook (`pre-commit install`) runs it locally with tkn-innerloop before
+each commit; GitHub Actions runs the same lint and tests.
+
 ```sh
-python3 -m unittest discover -s tests -v
-ruff check bin/tkn-innerloop tests
-shellcheck demo/*.sh
+make lint test
+make innerloop                                     # run .tekton/ci.yaml locally
 PAC_REPO=~/git/pac/main ./demo/record.sh
 aniflow --check README.md poc-report.md presentation.md
 ```
@@ -259,7 +263,7 @@ aniflow --check README.md poc-report.md presentation.md
 Konflux, Tekton Chains, tektoncd/pipeline examples and tektoncd/plumbing, each
 pinned to a commit. The unit tests check what inventory and the automatic scope
 return for each one, and each case's README describes the plan a good model
-should produce. `tests/corpus-check` asks the model for plans of each case,
+should produce. `hack/corpus-check` asks the model for plans of each case,
 checks them against per-case expectations, and with `--execute` runs some of them
 on the source repository, then again with a planted failure that must be caught.
 `tests/corpus/README.md` explains both and how to add a case.
@@ -274,7 +278,6 @@ Recordings and screenshots are written to `demo/out/` (git-ignored); upload them
 - [Report](https://share.chmouel.com/public/mgR03lI6LCmhiLLCnnY8VQ/poc-report.md)
 - [Presentation](https://share.chmouel.com/public/YUzvD7r-N9fGd6w4V5Urdg/presentation.md#slide=1)
 - [Recorded demo](https://share.chmouel.com/public/IcLisUXEiQsgfT1N7tQzsA/tkn-innerloop-demo.mp4)
-- [Agent skill](https://share.chmouel.com/public/bCKjBFak-pNzlQabwE7dJQ/SKILL.md)
 
 Anyone with these links can read them. Public links expire after 30 days.
 

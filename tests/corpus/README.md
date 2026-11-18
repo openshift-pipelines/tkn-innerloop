@@ -1,7 +1,7 @@
 # Corpus
 
 Real PipelineRuns and Pipelines from other repositories, used by
-`CorpusTests` in `tests/test_innerloop.py`. Each case has:
+`CorpusTests` in `tests/test_corpus.py`. Each case has:
 
 - `repo/`: the entry file and the local Pipelines, Tasks and StepActions it
   references, copied unchanged at their original paths
@@ -20,7 +20,7 @@ compared when present: `reference`, `note` (substring), `image`, `defined_in`,
 
 ## Model and execution checks
 
-`tests/corpus-check` checks out each case's source repository at its pinned
+`hack/corpus-check` checks out each case's source repository at its pinned
 commit, asks the model for a plan of the automatic scope several times, and
 compares each plan with the optional `plan` block:
 
@@ -37,8 +37,8 @@ Plans get no environment variables unless they are named with `--env NAME`,
 and a plan that requires one that was not given is reported as blocked.
 
 ```sh
-tests/corpus-check --model github-copilot/claude-sonnet-5.5:minimal --execute
-tests/corpus-check pac-linter --runs 1 --execute
+hack/corpus-check --model github-copilot/claude-sonnet-5.5:minimal --execute
+hack/corpus-check pac-linter --runs 1 --execute
 ```
 
 Each plan, log and a `report.json` are written under `tmp/corpus-runs/`. This
@@ -49,4 +49,4 @@ calls the model and pulls images, so it is not part of the unit tests.
 To add a case, copy the files into `<case>/repo/`, add a row to `SOURCES.md`,
 write `expected.yaml` from the source rather than from the current output, and
 describe the expected plan in `README.md`. When the case uses Tekton bundles, run
-`tests/corpus-bundles <case>` (needs skopeo and network) to fill `bundles/`.
+`hack/corpus-bundles <case>` (needs skopeo and network) to fill `bundles/`.
