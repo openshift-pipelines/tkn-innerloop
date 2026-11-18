@@ -1,0 +1,11 @@
+# Runs .tekton/ci.yaml locally through tkn-innerloop. The first run asks the agent
+# for a plan; later commits reuse the saved plan without a model call.
+repos:
+  - repo: local
+    hooks:
+      - id: tkn-innerloop
+        name: tkn-innerloop run .tekton/ci.yaml
+        entry: bin/tkn-innerloop run .tekton/ci.yaml
+        language: system
+        pass_filenames: false
+        types_or: [python, yaml, toml]

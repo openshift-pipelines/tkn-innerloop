@@ -4,3 +4,7 @@ __pycache__/
 dist/
 demo/out/
 tmp/
+demo/*.mp4
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
