@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tkn-innerloop: run your Tekton checks before you push</title>
+<meta name="description" content="tkn-innerloop reads the Tekton pipeline in your repository and runs the same checks on your machine, in the same container images, before you push.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@500;700;900&family=Red+Hat+Mono:wght@400;600&family=Red+Hat+Text:ital,wght@0,400;0,500;0,700;1,400&display=swap">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23172231'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23F2B630'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#how">Skip to how it works</a>
+
+<header class="top wrap">
+  <a class="brand" href="./"><span class="brand-dot" aria-hidden="true"></span>tkn-innerloop</a>
+  <nav aria-label="Main">
+    <a href="#how">How it works</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/openshift-pipelines/tkn-innerloop">GitHub</a>
+  </nav>
+</header>
+
+<main>
+<section class="hero wrap">
+  <h1>Run your pipeline’s checks before you&nbsp;push</h1>
+  <p class="lead">Your change passes its tests on your laptop, then the pull request turns red in Tekton
+    because of a spelling check or a naming rule you never ran. tkn-innerloop reads the pipeline in
+    your repository and runs those same checks on your machine, in the same container images, in a few
+    seconds.</p>
+
+  <div class="install-line">
+    <code id="install-cmd">uv tool install git+ssh://git@github.com/openshift-pipelines/tkn-innerloop</code>
+    <button type="button" class="copy" data-copy="install-cmd">Copy</button>
+  </div>
+
+  <figure class="track" aria-labelledby="track-caption">
+    <div class="track-lane">
+      <span class="lane-name">On the cluster, after you push</span>
+      <ol class="stations">
+        <li><span>fetch-repo</span></li>
+        <li><span>generate-release-yaml</span></li>
+        <li class="picked"><span>codespell</span></li>
+        <li><span>shellcheck</span></li>
+        <li><span>commit-validation</span></li>
+        <li><span>check-e2e-tests-naming</span></li>
+        <li class="picked"><span>check-test-conventions</span></li>
+        <li><span>check-generated-schemas</span></li>
+        <li><span>yamllint</span></li>
+        <li><span>zizmor</span></li>
+        <li><span>ruff-lint</span></li>
+        <li><span>ruff-format</span></li>
+        <li><span>markdownlint</span></li>
+        <li><span>vale</span></li>
+        <li><span>goreleaser-check</span></li>
+      </ol>
+    </div>
+    <div class="laptop">
+      <span class="lane-name">On your laptop, before you push</span>
+      <ul>
+        <li>codespell</li>
+        <li>check-test-conventions</li>
+      </ul>
+    </div>
+    <figcaption id="track-caption">The real linter pipeline from Pipelines-as-Code has 15 steps. In the
+      walkthrough below, two of them run on a laptop. Cloning, publishing release files and the rest
+      still happen on the cluster once you push.</figcaption>
+  </figure>
+</section>
+
+<section class="how" id="how" aria-labelledby="how-title">
+  <div class="wrap">
+    <h2 id="how-title">How it works, step by step</h2>
+    <p class="section-intro">A real session in the Pipelines-as-Code repository. Every screen below is
+      the actual output, trimmed where noted.</p>
+  </div>
+
+  <ol class="steps wrap">
+    <li class="step">
+      <div class="step-text">
+        <h3>You change some code</h3>
+        <p>Someone adds a small Go test. It has two problems a reviewer would catch: a typo in a comment,
+          and an underscore in the test name, which the project’s rules forbid.</p>
+      </div>
+      <div class="term" role="group" aria-label="Terminal: the new test file">
+<pre><span class="ps">pac&gt;</span> cat pkg/params/innerloop_demo_test.go
+package params
+
+import "testing"
+
+<span class="mark">func TestInnerLoop_ConfigValidation(t *testing.T) {</span>
+<span class="mark">	// Verify teh default configuration.</span>
+	got := "pac"
+	if got != "pac" {
+		t.Errorf("unexpected value: %s", got)
+	}
+}</pre>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="step-text">
+        <h3>Your usual tests pass</h3>
+        <p>The code works, so <code>go test</code> is happy. The pipeline also checks spelling and test
+          names, and those checks only run in Tekton after you push. Normally you would find out from a
+          red pull request and push again.</p>
+      </div>
+      <div class="term" role="group" aria-label="Terminal: go test passes">
+<pre><span class="ps">pac&gt;</span> go test -run TestInnerLoop ./pkg/params
+<span class="ok">ok</span>  	github.com/openshift-pipelines/pipelines-as-code/pkg/params</pre>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="step-text">
+        <h3>An agent writes a local plan, once</h3>
+        <p>tkn-innerloop gives the pipeline file to a coding agent. The agent reads the scripts and the
+          files they use, then decides for each step whether it can run on a laptop and what has to
+          change for that. It took five seconds here.</p>
+        <p>The plan is saved in your cache folder, never in your repository.</p>
+      </div>
+      <div class="term" role="group" aria-label="Terminal: generating the plan">
+<pre><span class="ps">pac&gt;</span> tkn-innerloop generate .tekton/linter.yaml \
+       --steps codespell,check-test-conventions -o /tmp/linters.json
+<span class="ok">  ✓</span> Resolve   tkn pac resolve
+<span class="box">╭─ Build your local plan ─────────────────────
+│ .tekton/linter.yaml · 2 steps · haiku
+╰──────────────────────────────────────────────</span>
+<span class="ok">  ✓ RUN LOCAL</span>  linters/codespell
+                 Plain shell step; no PaC placeholders or results;
+                 runs codespell over docs/content, pkg, test as in source.
+<span class="ok">  ✓ RUN LOCAL</span>  linters/check-test-conventions
+                 Script uses PaC placeholders for event header, base SHA;
+                 must be bound to local context.
+  2 ready · 13 skipped · 0 unresolved
+<span class="ok">  ✓</span> Plan ready in 5.1s → /tmp/linters.json</pre>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="step-text">
+        <h3>You read the plan</h3>
+        <p>Nothing runs on a guess. The plan gives every step a decision and a reason, and shows each
+          change made to a script.</p>
+        <p>Here the pipeline used details only GitHub knows, such as the commit your pull request
+          starts from. The plan swaps them for the same details taken from your local git checkout.</p>
+      </div>
+      <div class="term" role="group" aria-label="Terminal: reviewing the plan">
+<pre><span class="ps">pac&gt;</span> tkn-innerloop validate /tmp/linters.json --diff
+<span class="ok">  ✓ VALID</span>  plan checks passed
+<span class="ok">  ✓ RUN LOCAL</span>  linters/check-test-conventions
+                 ↳ PaC {{ body.pull_request.base.sha }} bound to $BASE_SHA.
+                 ↳ Changed-file selection is base SHA against working
+                 tree plus untracked files.
+<span class="dim">  ↷ SKIP</span>       linters/fetch-repo
+<span class="dim">  ↷ SKIP</span>       linters/shellcheck
+<span class="trim">  … 11 more skipped steps</span>
+
+<span class="del">-base_sha="{{ body.pull_request.base.sha }}"</span>
+<span class="add">+base_sha="$BASE_SHA"</span></pre>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="step-text">
+        <h3>The checks run on your machine</h3>
+        <p>Each step runs in a container built from the image the pipeline names, with your working copy
+          mounted inside. Changes you have not committed yet are checked too.</p>
+        <p>Both mistakes show up, with the same messages CI would have printed.</p>
+      </div>
+      <div class="term" role="group" aria-label="Terminal: both checks fail">
+<pre><span class="ps">pac&gt;</span> tkn-innerloop run /tmp/linters.json --steps codespell
+  ▶ [1/1] linters/codespell
+    registry.access.redhat.com/ubi9/python-312
+<span class="trim">  … pip installs codespell</span>
+<span class="bad">pkg/params/innerloop_demo_test.go:6: teh ==&gt; the</span>
+<span class="bad">  ✗ linters/codespell failed (exit 65) · 6.76s</span>
+
+<span class="ps">pac&gt;</span> tkn-innerloop run /tmp/linters.json --steps check-test-conventions
+  ▶ [1/1] linters/check-test-conventions
+    docker.io/golang:1.27
+<span class="bad">ERROR: pkg/params/innerloop_demo_test.go: test function names
+must use PascalCase (no underscores):
+5:func TestInnerLoop_ConfigValidation(t *testing.T) {</span>
+<span class="bad">  ✗ linters/check-test-conventions failed (exit 1) · 1.54s</span></pre>
+      </div>
+    </li>
+
+    <li class="step">
+      <div class="step-text">
+        <h3>Fix it and run again</h3>
+        <p>After the fix, the same plan runs again and both checks pass. From now on the saved plan is
+          reused without asking the agent. A new plan is made only when the pipeline, or a script it
+          reads, changes.</p>
+        <p>Then you push, and the cluster runs the full pipeline as usual.</p>
+      </div>
+      <div class="term" role="group" aria-label="Terminal: both checks pass">
+<pre><span class="ps">pac&gt;</span> tkn-innerloop run /tmp/linters.json
+  ▶ [1/2] linters/codespell
+<span class="ok">  ✓ linters/codespell passed · 9.36s</span>
+  ▶ [2/2] linters/check-test-conventions
+All modified test files pass convention checks.
+<span class="ok">  ✓ linters/check-test-conventions passed · 0.38s</span>
+<span class="ok">  ✓ 2/2 local checks passed · 9.75s</span>
+  13 skipped · 0 unresolved · cluster CI still required
+
+<span class="ps">pac&gt;</span> tkn-innerloop run .tekton/linter.yaml --steps codespell
+<span class="ok">  ✓</span> Scope     1 of 15 steps run locally
+<span class="ok">  ✓</span> Plan      reused
+<span class="trim">  … codespell runs</span>
+<span class="ok">  ✓ 1/1 local checks passed · 1.39s</span></pre>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section class="notes wrap" aria-labelledby="notes-title">
+  <h2 id="notes-title">What it leaves alone</h2>
+  <div class="notes-grid">
+    <div>
+      <h3>Anything that reaches outside your machine</h3>
+      <p>Cloning the repository (you already have it), pushing images, deploying, and posting to GitHub
+        stay on the cluster. So do steps marked to skip local runs, and any pattern you list in
+        <code>.tekton-innerloop.yaml</code>.</p>
+    </div>
+    <div>
+      <h3>Steps it cannot run safely</h3>
+      <p>When the agent cannot work out how to run a step, it marks it unresolved. The run then says the
+        result is incomplete instead of reporting a quiet pass.</p>
+    </div>
+    <div>
+      <h3>Your repository</h3>
+      <p>Plans, downloaded Tekton bundles and build caches live in <code>~/.cache/tkn-innerloop</code>.
+        Nothing is added to your checkout, so linters and <code>git status</code> never see it.</p>
+    </div>
+    <div>
+      <h3>Your judgement</h3>
+      <p>The agent edits scripts, and those scripts run on your machine. Read a new plan with
+        <code>validate --diff</code> before you trust it. Your CI still runs the whole pipeline.</p>
+    </div>
+  </div>
+  <p class="works-with">It understands plain Tekton PipelineRuns and Pipelines, Pipelines-as-Code
+    templates, Konflux pipelines, Tekton bundles and tekton-caches.</p>
+</section>
+
+<section class="install wrap" id="install" aria-labelledby="install-title">
+  <h2 id="install-title">Try it</h2>
+  <p>You need Python 3.11 or newer, <a href="https://docs.astral.sh/uv/">uv</a>, Podman or Docker, and the
+    <a href="https://github.com/earendil-works/pi">pi coding agent</a> signed in to a model provider.</p>
+  <div class="term term-light" role="group" aria-label="Install commands">
+<pre><span class="cm"># install the command</span>
+uv tool install git+ssh://git@github.com/openshift-pipelines/tkn-innerloop
+
+<span class="cm"># or try it once without installing</span>
+uvx --from git+ssh://git@github.com/openshift-pipelines/tkn-innerloop tkn-innerloop --help
+
+<span class="cm"># then, inside a repository with a .tekton/ folder</span>
+tkn-innerloop run
+
+<span class="cm"># optional: teach your coding agent to use it</span>
+tkn-innerloop skills install</pre>
+  </div>
+  <p>Run <code>uv tool upgrade tkn-innerloop</code> later to pick up new versions. The
+    <a href="https://github.com/openshift-pipelines/tkn-innerloop#readme">README</a> covers every option.</p>
+</section>
+</main>
+
+<footer class="foot wrap">
+  <p>tkn-innerloop is open source under the Apache License 2.0.
+    <a href="https://github.com/openshift-pipelines/tkn-innerloop">Source on GitHub</a>.</p>
+</footer>
+
+<script src="site.js" defer></script>
+</body>
+</html>

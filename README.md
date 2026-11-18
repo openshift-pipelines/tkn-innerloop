@@ -11,6 +11,9 @@ tkn-innerloop run .tekton/go.yaml
 The first run converts the pipeline and caches the plan; later runs reuse it with
 no agent call until the pipeline or a helper it reads changes.
 
+The [website](https://openshift-pipelines.github.io/tkn-innerloop/) walks through a real
+session step by step. Its source is in `docs/site/`; preview it with `make site`.
+
 The agent reads repository helpers as well as YAML. It proposes exact edits to
 source scripts and explains which steps run, which are skipped, and which still
 have unresolved requirements. The CLI handles validation and execution.

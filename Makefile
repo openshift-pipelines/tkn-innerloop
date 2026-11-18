@@ -1,7 +1,7 @@
 PYTHON ?= python3
 CORPUS_MODEL ?= github-copilot/claude-sonnet-5.5:minimal
 
-.PHONY: all test lint fix install corpus corpus-bundles innerloop
+.PHONY: all test lint fix install corpus corpus-bundles innerloop site
 
 all: lint test
 
@@ -28,3 +28,7 @@ corpus-bundles:
 # Runs this repository's own Tekton pipeline locally.
 innerloop:
 	bin/tkn-innerloop run .tekton/ci.yaml
+
+# Serves the website on http://127.0.0.1:8000.
+site:
+	$(PYTHON) -m http.server --bind 127.0.0.1 --directory docs/site
