@@ -13,6 +13,9 @@ dependencies = ["PyYAML>=6.0,<7"]
 [project.scripts]
 tkn-innerloop = "tkn_innerloop.cli:main"
 
+[tool.hatch.build.targets.sdist]
+include = ["src", "skills", "tests", "README.md"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/tkn_innerloop"]
 
