@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-labelledby="t">
+  <title id="t">The agent reads the pipeline and its helpers, then writes a plan that gives every step a decision</title>
+  <style>
+    .ink { stroke: #172231; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+    .mono { font: 600 14px "Red Hat Mono", ui-monospace, monospace; }
+    .small { font: 500 12px "Red Hat Mono", ui-monospace, monospace; }
+    .eye { animation: blink 4s infinite; transform-box: fill-box; transform-origin: center; }
+    @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+    .scan { animation: scan 3.2s ease-in-out infinite alternate; }
+    @keyframes scan { from { transform: translate(0, 0); } to { transform: translate(40px, 150px); } }
+    .flow { stroke-dasharray: 3 10; animation: flow 1s linear infinite; }
+    @keyframes flow { to { stroke-dashoffset: -13; } }
+    @media (prefers-reduced-motion: reduce) { .eye, .scan, .flow { animation: none; } }
+  </style>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.3" fill="#d3dae1"/></pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 L9 5 L1 9 Z" fill="#172231"/></marker>
+  </defs>
+  <rect width="800" height="320" fill="#fff"/>
+  <rect width="800" height="320" fill="url(#dots)"/>
+
+  <g>
+    <path class="ink" fill="#fff" d="M40 36 H176 L196 56 V126 H40 Z"/>
+    <path class="ink" fill="none" d="M176 36 V56 H196"/>
+    <text class="mono" x="54" y="62" fill="#172231">pipeline.yaml</text>
+    <path d="M54 82 H168 M54 98 H140 M54 114 H156" stroke="#c5ced7" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <g>
+    <path class="ink" fill="#fff" d="M60 116 H196 L216 136 V206 H60 Z"/>
+    <path class="ink" fill="none" d="M196 116 V136 H216"/>
+    <text class="mono" x="74" y="142" fill="#172231">Makefile</text>
+    <path d="M74 162 H150 M74 178 H188 M74 194 H130" stroke="#c5ced7" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <g>
+    <path class="ink" fill="#fff" d="M80 196 H216 L236 216 V286 H80 Z"/>
+    <path class="ink" fill="none" d="M216 196 V216 H236"/>
+    <text class="mono" x="94" y="222" fill="#172231">hack/lint.sh</text>
+    <path d="M94 242 H200 M94 258 H160 M94 274 H182" stroke="#c5ced7" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <g class="scan">
+    <circle class="ink" cx="150" cy="80" r="22" fill="#fde9b8" fill-opacity="0.55" stroke-width="5"/>
+    <path d="M166 96 L186 116" stroke="#172231" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <path class="flow" d="M250 160 H320" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text class="small" x="244" y="146" fill="#536173">read only</text>
+
+  <g>
+    <path d="M380 92 V74" stroke="#172231" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="380" cy="68" r="7" fill="#f2b630" stroke="#172231" stroke-width="3"/>
+    <rect class="ink" x="330" y="92" width="100" height="84" rx="20" fill="#172231"/>
+    <ellipse class="eye" cx="361" cy="128" rx="9" ry="11" fill="#f2b630"/>
+    <ellipse class="eye" cx="399" cy="128" rx="9" ry="11" fill="#f2b630"/>
+    <path d="M362 154 Q380 164 398 154" stroke="#f2b630" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <rect class="ink" x="318" y="118" width="12" height="28" rx="5" fill="#e2e7eb"/>
+    <rect class="ink" x="430" y="118" width="12" height="28" rx="5" fill="#e2e7eb"/>
+    <text class="mono" x="352" y="204" fill="#172231">agent</text>
+  </g>
+
+  <path class="flow" d="M456 160 H520" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+
+  <g>
+    <path class="ink" fill="#fff" d="M536 36 H736 L760 60 V286 H536 Z"/>
+    <path class="ink" fill="none" d="M736 36 V60 H760"/>
+    <text class="mono" x="554" y="66" fill="#172231">plan.json</text>
+    <path d="M554 80 H740" stroke="#e2e7eb" stroke-width="2"/>
+
+    <circle cx="570" cy="114" r="14" fill="#d5ecdf" stroke="#1f7a52" stroke-width="3"/>
+    <path d="M563 114 L568 119 L577 108" fill="none" stroke="#1f7a52" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="mono" x="594" y="119" fill="#172231">lint</text>
+    <text class="small" x="684" y="119" fill="#1f7a52">run</text>
+
+    <circle cx="570" cy="170" r="14" fill="#edf0f2" stroke="#536173" stroke-width="3"/>
+    <path d="M563 170 H577" stroke="#536173" stroke-width="3.5" stroke-linecap="round"/>
+    <text class="mono" x="594" y="175" fill="#172231">push</text>
+    <text class="small" x="684" y="175" fill="#536173">skip</text>
+
+    <circle cx="570" cy="226" r="14" fill="#fde9b8" stroke="#b07a00" stroke-width="3"/>
+    <text x="565" y="232" fill="#8a5d00" style="font: 800 16px system-ui, sans-serif">?</text>
+    <text class="mono" x="594" y="231" fill="#172231">e2e</text>
+    <text class="small" x="652" y="231" fill="#8a5d00">unresolved</text>
+  </g>
+</svg>

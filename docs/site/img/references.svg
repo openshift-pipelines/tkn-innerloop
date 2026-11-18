@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-labelledby="t">
+  <title id="t">Local Tasks are inlined into the PipelineRun, and bundles are fetched from a registry, pinned by digest and cached</title>
+  <style>
+    .ink { stroke: #172231; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+    .mono { font: 600 14px "Red Hat Mono", ui-monospace, monospace; }
+    .small { font: 500 12px "Red Hat Mono", ui-monospace, monospace; }
+    .flow { stroke-dasharray: 3 10; animation: flow 1s linear infinite; }
+    @keyframes flow { to { stroke-dashoffset: -13; } }
+    .glow { animation: glow 2.4s ease-in-out infinite; }
+    @keyframes glow { 50% { fill-opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) { .flow, .glow { animation: none; } }
+  </style>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.3" fill="#d3dae1"/></pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 L9 5 L1 9 Z" fill="#172231"/></marker>
+  </defs>
+  <rect width="800" height="320" fill="#fff"/>
+  <rect width="800" height="320" fill="url(#dots)"/>
+
+  <g>
+    <path class="ink" fill="#fff" d="M40 54 H176 L194 72 V132 H40 Z"/>
+    <path class="ink" fill="none" d="M176 54 V72 H194"/>
+    <text class="mono" x="54" y="80" fill="#172231">tasks/lint</text>
+    <path d="M54 100 H160 M54 116 H130" stroke="#c5ced7" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <g>
+    <path class="ink" fill="#fff" d="M40 178 H176 L194 196 V256 H40 Z"/>
+    <path class="ink" fill="none" d="M176 178 V196 H194"/>
+    <text class="mono" x="54" y="204" fill="#172231">tasks/test</text>
+    <path d="M54 224 H150 M54 240 H170" stroke="#c5ced7" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <path class="flow" d="M200 96 C250 96 250 140 296 140" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <path class="flow" d="M200 216 C250 216 250 190 296 190" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text class="small" x="214" y="166" fill="#536173">inlined</text>
+
+  <g>
+    <path class="ink" fill="#fff" d="M304 40 H476 L500 64 V282 H304 Z"/>
+    <path class="ink" fill="none" d="M476 40 V64 H500"/>
+    <text class="mono" x="320" y="70" fill="#172231">PipelineRun</text>
+    <path d="M320 84 H484" stroke="#e2e7eb" stroke-width="2"/>
+    <text class="small" x="320" y="110" fill="#536173">tasks:</text>
+    <rect class="glow" x="314" y="122" width="176" height="26" rx="5" fill="#fde9b8"/>
+    <text class="small" x="330" y="140" fill="#172231">taskRef: lint</text>
+    <rect class="glow" x="314" y="172" width="176" height="26" rx="5" fill="#fde9b8"/>
+    <text class="small" x="330" y="190" fill="#172231">taskRef: test</text>
+    <rect class="glow" x="314" y="222" width="176" height="26" rx="5" fill="#dce8f6"/>
+    <text class="small" x="330" y="240" fill="#172231">resolver: bundles</text>
+  </g>
+
+  <g transform="translate(636 52)">
+    <path class="ink" d="M0 18 L40 0 L80 18 L40 36 Z" fill="#dce8f6"/>
+    <path class="ink" d="M0 18 V62 L40 80 V36 Z" fill="#fff"/>
+    <path class="ink" d="M80 18 V62 L40 80 V36 Z" fill="#c9daee"/>
+  </g>
+  <text class="mono" x="634" y="158" fill="#172231">bundle</text>
+  <text class="small" x="610" y="176" fill="#536173">sha256:4f1c…</text>
+  <path class="flow" d="M620 220 C560 220 560 236 506 236" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text class="small" x="536" y="210" fill="#536173">pinned</text>
+
+  <g transform="translate(620 236)">
+    <path class="ink" d="M0 8 A6 6 0 0 1 6 2 H40 L50 12 H120 A6 6 0 0 1 126 18 V58 A6 6 0 0 1 120 64 H6 A6 6 0 0 1 0 58 Z" fill="#fde9b8"/>
+    <text class="small" x="12" y="44" fill="#172231">~/.cache</text>
+  </g>
+  <path d="M676 184 V228" stroke="#172231" stroke-width="3" stroke-dasharray="3 6" stroke-linecap="round"/>
+</svg>

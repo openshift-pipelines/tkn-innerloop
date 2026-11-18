@@ -71,12 +71,12 @@ tkn-innerloop run /tmp/plan.json
 ```
 
 To run the checks before every commit, add the
-[pre-commit hook](docs/usage.md#run-it-before-each-commit).
+[pre-commit hook](https://openshift-pipelines.github.io/tkn-innerloop/usage.html#run-it-before-each-commit).
 
 `tkn-innerloop skills install` copies a skill into `.agents/skills/` so your
 coding agent knows how to use the tool in that repository.
 
-The [usage guide](docs/usage.md) covers step selection, Pipelines-as-Code,
+The [usage guide](https://openshift-pipelines.github.io/tkn-innerloop/usage.html) covers step selection, Pipelines-as-Code,
 Tekton bundles, caches, secrets, runtimes and exit codes.
 [DEVELOPER.md](DEVELOPER.md) explains how to work on the tool itself.
 

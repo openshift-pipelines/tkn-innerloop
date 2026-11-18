@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Copies the aniflow diagram library, Mermaid and the built-in icons into
+# docs/site/aniflow/, so the website can play its diagrams. Uses an aniflow
+# installed with `uv tool install`, else fetches it with uvx.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+out=docs/site/aniflow
+source=git+https://github.com/chmouel/aniflow
+locate='import aniflow, os; print(os.path.dirname(aniflow.__file__))'
+
+python=$(uv tool dir)/aniflow/bin/python
+if [[ -x $python ]]; then
+  package=$("$python" -c "$locate")
+else
+  package=$(uvx --quiet --from "$source" python -c "$locate")
+fi
+
+rm -rf "$out"
+mkdir -p "$out"
+cp "$package"/static/aniflow.min.js "$package"/static/aniflow-diagrams.css "$out"/
+cp "$package"/vendor/mermaid.min.js "$package"/vendor/LICENSE.mermaid "$out"/
+cp -r "$package"/icons "$out"/icons
+echo "aniflow copied from $package into $out"

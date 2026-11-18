@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-labelledby="t">
+  <title id="t">validate --diff shows each script edit; the CLI checks the structure, and you read the commands</title>
+  <style>
+    .ink { stroke: #172231; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+    .mono { font: 600 14px "Red Hat Mono", ui-monospace, monospace; }
+    .label { font: 700 15px "Red Hat Display", system-ui, sans-serif; }
+    .tick { stroke-dasharray: 30; stroke-dashoffset: 30; animation: tick 4.5s ease-out infinite; }
+    .t2 { animation-delay: .35s; } .t3 { animation-delay: .7s; }
+    @keyframes tick { 0% { stroke-dashoffset: 30; } 15%, 100% { stroke-dashoffset: 0; } }
+    .look { animation: look 4.5s ease-in-out infinite; }
+    @keyframes look { 0%, 40% { transform: translateX(0); } 55%, 85% { transform: translateX(6px); } 100% { transform: translateX(0); } }
+    @media (prefers-reduced-motion: reduce) { .tick { animation: none; stroke-dashoffset: 0; } .look { animation: none; } }
+  </style>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.3" fill="#d3dae1"/></pattern>
+  </defs>
+  <rect width="800" height="320" fill="#fff"/>
+  <rect width="800" height="320" fill="url(#dots)"/>
+
+  <rect x="40" y="36" width="456" height="248" rx="14" fill="#fff"/>
+  <path d="M40 50 A14 14 0 0 1 54 36 H482 A14 14 0 0 1 496 50 V72 H40 Z" fill="#e2e7eb"/>
+  <path class="ink" d="M40 72 H496" fill="none"/>
+  <rect class="ink" x="40" y="36" width="456" height="248" rx="14" fill="none"/>
+  <circle cx="62" cy="54" r="5" fill="#c5ced7"/><circle cx="80" cy="54" r="5" fill="#c5ced7"/><circle cx="98" cy="54" r="5" fill="#c5ced7"/>
+  <text class="mono" x="120" y="59" fill="#536173">validate plan.json --diff</text>
+
+  <text class="mono" x="60" y="104" fill="#536173">  step go/unittest  run</text>
+  <rect x="42" y="118" width="452" height="32" fill="#f6d9d6"/>
+  <text class="mono" x="60" y="139" fill="#b8322a">- kubectl exec ci -- make test</text>
+  <rect x="42" y="152" width="452" height="32" fill="#d5ecdf"/>
+  <text class="mono" x="60" y="173" fill="#1f7a52">+ make test</text>
+  <text class="mono" x="60" y="214" fill="#536173">  image  golang:1.25</text>
+  <text class="mono" x="60" y="240" fill="#536173">  needs  go/mod-download</text>
+  <text class="mono" x="60" y="266" fill="#536173">  shell  bash</text>
+
+  <path class="ink" fill="#fff" d="M574 46 L620 30 L666 46 V88 C666 116 646 134 620 144 C594 134 574 116 574 88 Z"/>
+  <path d="M600 86 L614 100 L640 72" fill="none" stroke="#1f7a52" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g class="label" fill="#172231">
+    <text x="600" y="184">source hashes</text>
+    <text x="600" y="214">image pinned</text>
+    <text x="600" y="244">no placeholders</text>
+  </g>
+  <g fill="none" stroke="#1f7a52" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path class="tick" d="M570 178 L577 185 L590 170"/>
+    <path class="tick t2" d="M570 208 L577 215 L590 200"/>
+    <path class="tick t3" d="M570 238 L577 245 L590 230"/>
+  </g>
+
+  <g transform="translate(570 276)">
+    <path class="ink" d="M0 0 Q14 -14 28 0 Q14 14 0 0 Z" fill="#fff"/>
+    <circle class="look" cx="13" cy="0" r="5" fill="#172231"/>
+  </g>
+  <text class="label" x="608" y="281" fill="#8a5d00">you read the commands</text>
+</svg>

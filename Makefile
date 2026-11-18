@@ -10,7 +10,7 @@ test:
 
 lint:
 	ruff check .
-	shellcheck docs/demo/*.sh
+	shellcheck docs/demo/*.sh hack/site-aniflow
 
 fix:
 	ruff check --fix .
@@ -31,4 +31,5 @@ innerloop:
 
 # Serves the website on http://127.0.0.1:8000.
 site:
+	hack/site-aniflow
 	$(PYTHON) -m http.server --bind 127.0.0.1 --directory docs/site

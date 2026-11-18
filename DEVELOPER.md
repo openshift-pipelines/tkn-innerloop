@@ -10,8 +10,7 @@
 | `tests/` | unit tests, split by area, and `tests/corpus/` |
 | `hack/` | scripts that check real pipelines against a model |
 | `.tekton/ci.yaml` | this repository's own pipeline |
-| `docs/usage.md` | the user guide |
-| `docs/site/` | the website, published to GitHub Pages from `main` |
+| `docs/site/` | the website, published to GitHub Pages from `main`. `usage.html` is the user guide, illustrated by the SVGs in `img/`. |
 | `docs/demo/`, `docs/art/` | the recorded demo and the pictures for the slides |
 | `docs/poc-report.md`, `docs/presentation.md` | the proof-of-concept report and slides |
 
@@ -31,12 +30,17 @@ make lint test       # ruff, shellcheck and the unit tests
 make fix             # apply ruff's automatic fixes
 make innerloop       # run .tekton/ci.yaml locally with tkn-innerloop itself
 make site            # preview the website on http://127.0.0.1:8000
-aniflow --check docs/usage.md docs/poc-report.md docs/presentation.md
+aniflow --check docs/poc-report.md docs/presentation.md
 ```
 
 The pre-commit hook runs `.tekton/ci.yaml` through `bin/tkn-innerloop` before
 each commit. The first run asks the agent for a plan, and later commits reuse
 it. GitHub Actions runs the same lint and tests on Python 3.11 and 3.13.
+
+`make site` first runs `hack/site-aniflow`, which copies the aniflow diagram
+library, Mermaid and the icons into `docs/site/aniflow/` (git-ignored). It uses
+an aniflow installed with `uv tool install` or fetches one with uvx. The
+Pages workflow runs the same script before publishing.
 
 ## The corpus
 

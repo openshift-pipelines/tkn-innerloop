@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-labelledby="t">
+  <title id="t">Two Go images share one go-build cache drawer; npm and gomod caches sit in their own drawers</title>
+  <style>
+    .ink { stroke: #172231; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+    .mono { font: 600 14px "Red Hat Mono", ui-monospace, monospace; }
+    .small { font: 500 12px "Red Hat Mono", ui-monospace, monospace; }
+    .flow { stroke-dasharray: 3 10; animation: flow 1s linear infinite; }
+    @keyframes flow { to { stroke-dashoffset: -13; } }
+    .open { animation: open 3.2s ease-in-out infinite; }
+    @keyframes open { 0%, 30%, 100% { transform: translateX(0); } 50%, 80% { transform: translateX(-26px); } }
+    @media (prefers-reduced-motion: reduce) { .flow, .open { animation: none; } }
+  </style>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.3" fill="#d3dae1"/></pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 L9 5 L1 9 Z" fill="#172231"/></marker>
+  </defs>
+  <rect width="800" height="320" fill="#fff"/>
+  <rect width="800" height="320" fill="url(#dots)"/>
+
+  <g transform="translate(40 46)">
+    <rect class="ink" width="230" height="86" rx="10" fill="#dce8f6"/>
+    <path d="M24 14 V72 M48 14 V72 M72 14 V72" stroke="#2d6cb5" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+    <text class="mono" x="92" y="40" fill="#172231">golang</text>
+    <text class="small" x="92" y="62" fill="#536173">go test</text>
+  </g>
+  <g transform="translate(40 188)">
+    <rect class="ink" width="230" height="86" rx="10" fill="#dce8f6"/>
+    <path d="M24 14 V72 M48 14 V72 M72 14 V72" stroke="#2d6cb5" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+    <text class="mono" x="92" y="40" fill="#172231">golangci</text>
+    <text class="small" x="92" y="62" fill="#536173">lint</text>
+  </g>
+
+  <path class="flow" d="M276 90 C390 90 380 112 476 112" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <path class="flow" d="M276 230 C390 230 380 128 476 120" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text class="small" x="300" y="70" fill="#536173">same user ID</text>
+
+  <rect class="ink" x="490" y="40" width="270" height="250" rx="12" fill="#e2e7eb"/>
+  <text class="mono" x="508" y="30" fill="#536173">$CACHES</text>
+  <g class="open">
+    <rect class="ink" x="506" y="62" width="238" height="64" rx="8" fill="#f2b630"/>
+    <rect class="ink" x="600" y="86" width="50" height="10" rx="5" fill="#172231"/>
+    <text class="mono" x="520" y="118" fill="#172231">go-build</text>
+  </g>
+  <rect class="ink" x="506" y="138" width="238" height="64" rx="8" fill="#fff"/>
+  <rect class="ink" x="600" y="162" width="50" height="10" rx="5" fill="#172231"/>
+  <text class="mono" x="520" y="194" fill="#536173">gomod</text>
+  <rect class="ink" x="506" y="214" width="238" height="64" rx="8" fill="#fff"/>
+  <rect class="ink" x="600" y="238" width="50" height="10" rx="5" fill="#172231"/>
+  <text class="mono" x="520" y="270" fill="#536173">npm</text>
+</svg>

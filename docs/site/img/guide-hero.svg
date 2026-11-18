@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-labelledby="t">
+  <title id="t">Two steps of a cluster pipeline drop down and run on a laptop</title>
+  <style>
+    .ink { stroke: #172231; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+    .mono { font: 600 14px "Red Hat Mono", ui-monospace, monospace; }
+    .drop { animation: drop 2.6s cubic-bezier(.4,0,.6,1) infinite; }
+    .late { animation-delay: 1.3s; }
+    @keyframes drop { 0% { transform: translateY(0); opacity: 0; } 12% { opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(96px); opacity: 0; } }
+    .blink { animation: blink 1.1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .drop, .blink { animation: none; } .drop { opacity: 0; } }
+  </style>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.3" fill="#d3dae1"/></pattern>
+  </defs>
+  <rect width="800" height="320" fill="#fff"/>
+  <rect width="800" height="320" fill="url(#dots)"/>
+
+  <path class="ink" fill="#dce8f6" d="M48 136 A30 30 0 0 1 62 80 A44 44 0 0 1 144 62 A36 36 0 0 1 204 94 A22 22 0 0 1 196 136 Z"/>
+  <text class="mono" x="94" y="118" fill="#172231">cluster</text>
+
+  <path d="M206 100 H770" stroke="#172231" stroke-width="5" stroke-linecap="round"/>
+  <g class="ink" stroke-width="4" fill="#edf0f2">
+    <circle cx="250" cy="100" r="10"/>
+    <circle cx="390" cy="100" r="10"/>
+    <circle cx="460" cy="100" r="10"/>
+    <circle cx="530" cy="100" r="10"/>
+    <circle cx="670" cy="100" r="10"/>
+    <circle cx="740" cy="100" r="10"/>
+  </g>
+  <g class="ink" stroke-width="4" fill="#f2b630">
+    <circle cx="320" cy="100" r="10"/>
+    <circle cx="600" cy="100" r="10"/>
+  </g>
+  <text class="mono" x="252" y="74" fill="#536173">your pipeline, step by step</text>
+
+  <g stroke="#f2b630" stroke-width="4" stroke-dasharray="2 9" stroke-linecap="round">
+    <path d="M320 114 V196"/>
+    <path d="M600 114 V196"/>
+  </g>
+  <circle class="drop" cx="320" cy="112" r="7" fill="#f2b630"/>
+  <circle class="drop late" cx="600" cy="112" r="7" fill="#f2b630"/>
+
+  <rect class="ink" x="290" y="198" width="340" height="96" rx="12" fill="#172231"/>
+  <path class="ink" d="M262 300 H658 L642 314 H278 Z" fill="#e2e7eb"/>
+  <text class="mono" x="310" y="226" fill="#f2b630">$ tkn-innerloop run</text>
+  <text class="mono" x="310" y="252" fill="#5fd39a">✓ codespell</text>
+  <text class="mono" x="310" y="276" fill="#5fd39a">✓ check-test-conventions</text>
+  <rect class="blink" x="508" y="266" width="9" height="14" fill="#d6dee8"/>
+
+  <g transform="translate(700 236)">
+    <circle r="28" fill="#d5ecdf" stroke="#1f7a52" stroke-width="3"/>
+    <path d="M-12 1 L-3 10 L13 -9" fill="none" stroke="#1f7a52" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text class="mono" x="660" y="290" fill="#536173">before you push</text>
+</svg>

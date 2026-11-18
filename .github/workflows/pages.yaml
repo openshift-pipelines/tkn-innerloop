@@ -3,7 +3,7 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ["docs/site/**", ".github/workflows/pages.yaml"]
+    paths: ["docs/site/**", "hack/site-aniflow", ".github/workflows/pages.yaml"]
   workflow_dispatch:
 
 permissions:
@@ -24,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/configure-pages@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: hack/site-aniflow
       - uses: actions/upload-pages-artifact@v4
         with:
           path: docs/site

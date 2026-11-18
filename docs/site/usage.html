@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide: using tkn-innerloop</title>
+<meta name="description" content="How tkn-innerloop chooses, reviews and runs the steps of your Tekton pipeline on your machine, and every option it takes.">
+<meta property="og:title" content="Using tkn-innerloop">
+<meta property="og:description" content="How tkn-innerloop chooses, reviews and runs your Tekton checks locally.">
+<meta property="og:image" content="https://openshift-pipelines.github.io/tkn-innerloop/social.png">
+<meta property="og:url" content="https://openshift-pipelines.github.io/tkn-innerloop/usage.html">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@500;700;900&family=Red+Hat+Mono:wght@400;600&family=Red+Hat+Text:ital,wght@0,400;0,500;0,700;1,400&display=swap">
+<link rel="stylesheet" href="aniflow/aniflow-diagrams.css">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+</head>
+<body class="guide-page">
+<a class="skip" href="#guide">Skip to the guide</a>
+
+<header class="top wrap">
+  <a class="brand" href="./"><img class="brand-logo" src="logo.svg" alt="" width="48" height="48">tkn-innerloop</a>
+  <nav aria-label="Main">
+    <a href="./#how">How it works</a>
+    <a href="./#install">Install</a>
+    <a href="usage.html" aria-current="page">Guide</a>
+    <a href="https://github.com/openshift-pipelines/tkn-innerloop">GitHub</a>
+  </nav>
+</header>
+
+<main class="guide wrap" id="guide">
+<nav class="guide-toc" aria-label="On this page">
+  <ol>
+    <li><a href="#how-a-run-works">How a run works</a></li>
+    <li><a href="#the-agent-and-the-model">The agent and the model</a></li>
+    <li><a href="#choosing-steps">Choosing steps</a></li>
+    <li><a href="#reviewing-before-running">Reviewing before running</a></li>
+    <li><a href="#run-it-before-each-commit">Run it before each commit</a></li>
+    <li><a href="#pipelines-and-references">Pipelines and references</a></li>
+    <li><a href="#caches">Caches</a></li>
+    <li><a href="#runtimes-and-environment">Runtimes and environment</a></li>
+    <li><a href="#failures-and-exit-codes">Failures and exit codes</a></li>
+    <li><a href="#output">Output</a></li>
+    <li><a href="#agent-skill">Agent skill</a></li>
+  </ol>
+</nav>
+
+<article class="guide-body">
+<h1>Using tkn-innerloop</h1>
+<p class="lead"><code>tkn-innerloop</code> takes a Tekton PipelineRun or Pipeline from your repository,
+  asks a coding agent to adapt its steps for your machine, and runs them in Podman or Docker.
+  Kubernetes stays in CI.</p>
+<figure class="guide-art"><img src="img/guide-hero.svg" alt="Two steps of a cluster pipeline drop down and run on a laptop" width="800" height="320"></figure>
+
+<h2 id="how-a-run-works">How a run works</h2>
+
+<figure class="guide-diagram">
+  <div class="aniflow-figure">
+    <div class="highlight-source-mermaid" data-story="Convert once"><pre>flowchart LR
+  Source@{ img: "/icons/repository.svg", label: "Pipeline and helpers", w: 48, h: 48, constraint: "on" }
+  Agent@{ img: "/icons/agent.svg", label: "Read and propose", w: 48, h: 48, constraint: "on" }
+  Plan@{ img: "/icons/document.svg", label: "Review the plan", w: 48, h: 48, constraint: "on" }
+  Check@{ img: "/icons/check.svg", label: "Validate inputs", w: 48, h: 48, constraint: "on" }
+  Run@{ img: "/icons/container.svg", label: "Run local scope", w: 48, h: 48, constraint: "on" }
+  Edit@{ img: "/icons/code.svg", label: "Edit source", w: 48, h: 48, constraint: "on" }
+  Source --&gt; Agent --&gt; Plan --&gt; Check --&gt; Run --&gt; Edit
+  Edit --&gt; Check
+
+%% play: Convert once
+%% Source -&gt; Agent | The agent reads YAML, Makefiles and referenced helpers with read-only tools
+%% Agent -&gt; Plan : edits | Review exact script changes, prerequisites and excluded checks
+%% Plan -&gt; Check | The CLI verifies source hashes, image provenance and script structure
+%% Check -&gt; Run | Execute the selected checks in their declared images
+%% play: Reuse after editing
+%% skip Source Agent Plan
+%% Run -&gt; Edit
+%% Edit -&gt; Check | Code edits reuse the saved plan; changed pipeline inputs require regeneration
+%% Check -&gt; Run : no model | Run the same local scope again</pre></div>
+  </div>
+  <figcaption>Press play to follow a first run, or pick the second story to see what happens after you edit code.</figcaption>
+</figure>
+
+<p>The agent reads the pipeline YAML and the helpers it calls (Makefiles, scripts, configuration). It
+  gives every step a decision with a reason: run it locally, skip it, or leave it unresolved. For steps
+  that run, it proposes exact edits to their scripts. The CLI checks the plan and runs it. Nothing runs
+  on a guess: a step starts unresolved until the agent decides, and no allowlist of command names
+  decides for it.</p>
+<p>The plan is cached in <code>${XDG_CACHE_HOME:-~/.cache}/tkn-innerloop/&lt;repo&gt;-&lt;hash&gt;/</code>,
+  outside your working tree, so your repository does not change and linters that scan it never see the
+  plan. Later runs reuse the plan with no model call. It is regenerated when the pipeline or one of the
+  files it declared as inputs changes, or when you pass <code>--refresh</code>.</p>
+
+<h2 id="the-agent-and-the-model">The agent and the model</h2>
+<figure class="guide-art"><img src="img/agent-reads.svg" alt="The agent reads the pipeline and its helpers, then writes a plan that gives every step a decision" width="800" height="320" loading="lazy"></figure>
+<p>Conversion uses the <a href="https://github.com/earendil-works/pi">pi coding agent</a> with its
+  <code>read</code>, <code>grep</code>, <code>find</code> and <code>ls</code> tools. Those tools only
+  read, but they are not a filesystem sandbox. pi's startup update checks are turned off.</p>
+<p>The default model is Haiku. Pick another with <code>--model</code> or
+  <code>TKN_INNERLOOP_AI_MODEL</code>. Thinking stays off unless the model name ends in a pi level, such
+  as <code>github-copilot/claude-sonnet-5.5:minimal</code>. Some models refuse to turn thinking off.</p>
+<p>Model choice matters. Over 10 conversions of one step (<code>go/unittest</code>), Haiku produced a
+  valid plan on the first try every time, in 6.5 seconds on average. DeepSeek V4.1 Flash through enmaas
+  needed a retry 5 times and failed 3 times, usually because of unescaped quotes in shell edits. A
+  malformed answer is sent back twice with the exact error. A step the agent leaves unresolved is not
+  retried.</p>
+
+<h2 id="choosing-steps">Choosing steps</h2>
+<figure class="guide-art"><img src="img/choosing-steps.svg" alt="Clone, push, deploy and finally tasks stay on the cluster; lint, test and codespell run on your laptop" width="800" height="320" loading="lazy"></figure>
+<p>Without <code>--steps</code>, <code>run</code> chooses the steps itself. These stay on the cluster:</p>
+<ul>
+  <li>steps that use an external reference such as <code>git-clone</code></li>
+  <li>steps whose work the local checkout already covers</li>
+  <li><code>finally</code> tasks</li>
+  <li>steps marked <code>(skip-local)</code></li>
+  <li>steps that push, deploy or call an API</li>
+</ul>
+<p>tekton-caches steps are replaced by a local cache directory (see <a href="#caches">Caches</a>). The
+  agent decides the rest.</p>
+<p>Add patterns for your own publishing tools in <code>.tekton-innerloop.yaml</code> at the repository
+  root. Each entry is a regular expression added to the built-in list:</p>
+<div class="term term-light" role="group" aria-label=".tekton-innerloop.yaml">
+<pre>cluster_only:
+  - '\bwrangler\s+deploy'</pre>
+</div>
+<p><code>--steps</code> replaces the automatic choice. Use the step IDs that <code>inspect</code> prints
+  when a step name is ambiguous. A single PipelineRun uses <code>task/step</code> IDs. A file with several
+  YAML documents uses <code>pipelinerun/task/step</code>. Empty YAML documents are ignored.</p>
+<p>Without a file argument, <code>run</code> looks in <code>.tekton/</code> and prefers PipelineRuns over
+  Pipelines. It searches the whole repository only when <code>.tekton/</code> has no pipeline at all.
+  When <code>.tekton/</code> has pipelines but none can run locally, it lists each one with the reason.
+  When it finds several, it lists them so you can pass one.</p>
+
+<h2 id="reviewing-before-running">Reviewing before running</h2>
+<figure class="guide-art"><img src="img/review-diff.svg" alt="validate --diff shows each script edit; the CLI checks the structure, and you read the commands" width="800" height="320" loading="lazy"></figure>
+<p><code>run</code> executes the scripts the agent edited without stopping. To read them first:</p>
+<div class="term term-light" role="group" aria-label="Review commands">
+<pre>tkn-innerloop inspect .tekton/linter.yaml
+tkn-innerloop generate .tekton/linter.yaml \
+  --steps codespell,check-test-conventions -o /tmp/linters.plan.json
+tkn-innerloop validate /tmp/linters.plan.json --diff
+tkn-innerloop run /tmp/linters.plan.json</pre>
+</div>
+<p><code>validate --diff</code> prints every decision with the original and adapted scripts. Each script
+  edit must match its source text exactly once. A runnable step keeps its source image and declares its
+  shell, environment, working directory and the steps it depends on. The runner refuses a plan with
+  stale input hashes, unknown step selections, missing setup steps, Tekton or Pipelines-as-Code
+  placeholders left unbound, or unresolved steps in the selected scope.</p>
+<p>These checks look at structure. They cannot prove that the adapted script does the same thing as the
+  original or that its commands are safe, so read the commands. The runner does not emulate Tekton's
+  scheduler, sidecars or result passing. The agent has to account for those or leave the step
+  unresolved. The inputs the agent lists in the plan decide which file changes make it stale.</p>
+
+<h2 id="run-it-before-each-commit">Run it before each commit</h2>
+<figure class="guide-art"><img src="img/pre-commit.svg" alt="Before each commit, the change passes through the tkn-innerloop checks; a failing check stops the commit" width="800" height="320" loading="lazy"></figure>
+<p>The repository ships a <a href="https://pre-commit.com">pre-commit</a> hook. Add it to
+  <code>.pre-commit-config.yaml</code> in the repository you want to check, and pass the pipeline file
+  and any other <code>run</code> options as <code>args</code>:</p>
+<div class="term term-light" role="group" aria-label="pre-commit configuration">
+<pre>repos:
+  - repo: https://github.com/openshift-pipelines/tkn-innerloop
+    rev: main
+    hooks:
+      - id: tkn-innerloop
+        args: [.tekton/linter.yaml, --steps, "codespell,yamllint"]</pre>
+</div>
+<p>Then pin <code>rev</code> to the current commit and install the git hook:</p>
+<div class="term term-light" role="group" aria-label="pre-commit setup commands">
+<pre>pre-commit autoupdate --bleeding-edge
+pre-commit install</pre>
+</div>
+<p>pre-commit installs tkn-innerloop in its own environment. You still need pi, and Podman or Docker, on
+  your machine. Before each commit, pre-commit sets aside the changes you have not staged, so the checks
+  see what you are about to commit. Any check that fails stops the commit, and so does exit code
+  <code>2</code>, when some steps stayed unresolved. Narrow the hook with <code>--steps</code> to the
+  checks that run.</p>
+<p>Run <code>tkn-innerloop run</code> with the same arguments once by hand before installing the hook, so
+  the agent writes the plan outside of a commit. After that each commit reuses the plan with no model
+  call, until the pipeline or its helpers change. To commit once without the checks, use
+  <code>SKIP=tkn-innerloop git commit</code>.</p>
+<p>If tkn-innerloop is already installed with uv, a local hook avoids the second copy:</p>
+<div class="term term-light" role="group" aria-label="Local pre-commit hook">
+<pre>repos:
+  - repo: local
+    hooks:
+      - id: tkn-innerloop
+        name: tkn-innerloop
+        entry: tkn-innerloop run .tekton/linter.yaml
+        language: system
+        pass_filenames: false</pre>
+</div>
+
+<h2 id="pipelines-and-references">Pipelines and references</h2>
+<figure class="guide-art"><img src="img/references.svg" alt="Local Tasks are inlined into the PipelineRun, and bundles are fetched from a registry, pinned by digest and cached" width="800" height="320" loading="lazy"></figure>
+<p>A file can hold PipelineRuns, or Pipelines when it has no PipelineRun, with the Tasks and StepActions
+  they use. ConfigMaps, Secrets and other resources in the same file are ignored.</p>
+<p>A <code>pipelineRef</code>, <code>taskRef</code> or step <code>ref</code> by name is looked up in the
+  repository's tracked and untracked YAML files and inlined. Git-ignored files are skipped. A PipelineRun
+  that points at <code>tekton/pipeline.yaml</code>, with Tasks under <code>tekton/tasks/</code>, works as
+  is. Those files become plan inputs, so editing a Task makes the plan stale.</p>
+<p>A missing <code>pipelineRef</code>, or a remote one that is not a bundle, is an error, since there is
+  no step list to work from. A Task or StepAction that is missing, defined twice, a ClusterTask, or
+  fetched by another resolver (hub, git) stays an unresolved reference, and <code>inspect</code> says
+  why.</p>
+
+<h3 id="tekton-bundles">Tekton bundles</h3>
+<p><code>tkn-innerloop</code> fetches bundles (<code>resolver: bundles</code>) for
+  <code>pipelineRef</code>, <code>taskRef</code> and step <code>ref</code> with
+  <a href="https://github.com/containers/skopeo">skopeo</a>, using your registry login. Each object is
+  pinned to its image digest, and a tag is looked up once per run. Objects are cached in
+  <code>${XDG_CACHE_HOME:-~/.cache}/tkn-innerloop/bundles/</code>, so later runs work offline. They are
+  plan inputs like local files. Set <code>TKN_INNERLOOP_BUNDLE_DIR</code> to a mirror with the same
+  layout to check it before the cache. When skopeo is missing or the fetch fails, a Task stays a
+  reference with the reason, and a bundle <code>pipelineRef</code> is an error.</p>
+
+<h3 id="konflux">Konflux</h3>
+<p>In Konflux pipelines the clone task and the <code>build-trusted-artifacts</code> steps only rebuild
+  the source checkout. They are marked as covered by your local checkout and never run. The directory
+  they restore into, <code>/var/workdir/source</code>, becomes <code>$WORKSPACE</code> in the other
+  steps.</p>
+
+<h3 id="parameters-when-and-matrix">Parameters, <code>when</code> and <code>matrix</code></h3>
+<p>The agent gets parameter values with the task defaults applied and uses them in its script edits. It
+  evaluates <code>when</code> guards it can decide from parameters. For a <code>matrix</code> task, it
+  loops over the combinations or leaves the task unresolved; <code>inspect</code> marks those tasks.</p>
+
+<h3 id="pipelines-as-code">Pipelines-as-Code</h3>
+<p>A file with <code>pipelinesascode.tekton.dev/</code> annotations turns on Pipelines-as-Code handling.
+  <code>{{ revision }}</code>, <code>{{ source_branch }}</code>, <code>{{ target_branch }}</code> and
+  <code>{{ event_type }}</code> become <code>$HEAD_SHA</code>, <code>$HEAD_REF</code>,
+  <code>$BASE_REF</code> and <code>pull_request</code>. The agent binds any other placeholder or leaves
+  the step unresolved. Outside Pipelines-as-Code files, <code>{{ … }}</code> is left alone, since Go
+  templates are ordinary script text.</p>
+<p>When <code>tkn-pac</code> is installed, the file goes through <code>tkn pac resolve</code> first,
+  which also fetches tasks named in <code>pipelinesascode.tekton.dev/task</code> annotations. The output
+  is cached next to the plan and reused until an input changes or you pass <code>--refresh</code>. If
+  <code>tkn pac resolve</code> fails, local resolution takes over with a warning.</p>
+
+<h2 id="caches">Caches</h2>
+<figure class="guide-art"><img src="img/caches.svg" alt="Two Go images share one go-build cache drawer; npm and gomod caches sit in their own drawers" width="800" height="320" loading="lazy"></figure>
+<p>The <code>cache-fetch</code> and <code>cache-upload</code> StepActions from
+  <a href="https://github.com/openshift-pipelines/tekton-caches">tekton-caches</a> are skipped locally.
+  The runner spots them from dedicated uses of <code>/ko-app/cache</code> or upstream cache scripts in
+  known cache images. For an unresolved reference it checks the action name, URL or path.</p>
+<p>Steps in the same PipelineRun that use the same image and workspace directory can share a persistent
+  path such as <code>$CACHES/go-build-cache-&lt;hash&gt;</code>. Go caches set through
+  <code>GOCACHE</code>, <code>GOMODCACHE</code> or <code>GOLANGCILINT_CACHE</code>, and npm download
+  caches set through <code>npm_config_cache</code> or <code>NPM_CONFIG_CACHE</code>, are shared across
+  images that run as the same user ID.</p>
+<p>Each cache directory must serve one tool. These stay at their original path:</p>
+<ul>
+  <li>directories used by several tools or by containers with different user IDs</li>
+  <li>overlapping or relative paths</li>
+  <li><code>node_modules</code></li>
+  <li>caches that contain the step's working directory</li>
+  <li>cache paths in scripts that use here-documents or command substitution</li>
+</ul>
+<p><code>tkn-innerloop cache clean</code> removes the local caches. When Docker created files your user
+  cannot delete, cleanup uses an Alpine container and may pull its image.</p>
+
+<h2 id="runtimes-and-environment">Runtimes and environment</h2>
+<figure class="guide-art"><img src="img/runtimes.svg" alt="Your checkout is mounted at /workspace in Podman or Docker, or used in place with --runtime host" width="800" height="320" loading="lazy"></figure>
+<p><code>--runtime auto</code>, the default, uses Podman when installed and Docker otherwise. Both mount
+  the worktree at <code>/workspace</code>, replace the image entrypoint with the declared shell, and pass
+  the script on stdin. Docker's daemon runs as root, so after each step the runner gives the files it
+  created in your checkout back to you. Podman already writes them as you.</p>
+<p><code>--runtime host</code> runs the same scripts with the tools, setup commands and environment of
+  your machine. Use it only after reviewing those commands.</p>
+<p>The runner sets these variables, each only when a selected step uses it:</p>
+<div class="guide-table">
+<table>
+  <thead><tr><th>Variable</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>BASE_SHA</code></td><td><code>git merge-base HEAD &lt;base&gt;</code>. The base is
+      origin's default branch, else <code>main</code>, else <code>master</code>. Change it with
+      <code>--base</code>.</td></tr>
+    <tr><td><code>BASE_REF</code></td><td>that base branch, without the remote</td></tr>
+    <tr><td><code>HEAD_SHA</code>, <code>HEAD_REF</code></td><td>the current commit and branch</td></tr>
+    <tr><td><code>RESULTS</code></td><td>an empty directory outside the checkout (<code>/results</code>
+      in containers), shared by the steps of one run and removed afterwards. Tasks write their results
+      there and the tasks that consume them read them.</td></tr>
+    <tr><td><code>CACHES</code></td><td>the persistent cache directory (<code>/caches</code> in
+      containers), under
+      <code>${XDG_CACHE_HOME:-~/.cache}/tkn-innerloop/&lt;repo&gt;-&lt;hash&gt;/caches/</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>Host runs, each container runtime and each image ID get separate cache storage. Go and npm caches
+  shared across images are keyed by tool, runtime and user ID.</p>
+<p>Secrets are forwarded only when you pass <code>--env NAME</code>. A step that lists the variable in
+  <code>required_env</code> blocks the run without it. A variable in <code>optional_env</code>, such as a
+  token that only raises a rate limit, is forwarded when you pass it and never blocks.
+  <code>tkn-innerloop</code> fetches no credentials on its own.</p>
+<p>Image tags and network downloads can change tool versions between runs. The runner tells you when an
+  image tag resolves to a different image than last time.</p>
+
+<h2 id="failures-and-exit-codes">Failures and exit codes</h2>
+<figure class="guide-art"><img src="img/exit-codes.svg" alt="Exit code 0 means every check passed, 1 means a check failed, 2 means some steps stayed unresolved" width="800" height="280" loading="lazy"></figure>
+<p>Steps keep running after a failure unless a later step depends on the failed one. A failure under
+  <code>onError: continue</code> does not fail the run. On a step it is ignored. On a pipeline task, the
+  rest of that task's steps are skipped, as in Tekton, and the following tasks still run. A container
+  that fails to start always fails the run.</p>
+<div class="guide-table">
+<table>
+  <thead><tr><th>Exit code</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>0</code></td><td>every selected check passed</td></tr>
+    <tr><td><code>1</code></td><td>a check failed</td></tr>
+    <tr><td><code>2</code></td><td>everything that ran passed, but some steps stayed unresolved</td></tr>
+  </tbody>
+</table>
+</div>
+<p>A successful run reports what ran and how many steps were skipped or left unresolved. Cluster CI
+  still covers the rest of the pipeline.</p>
+
+<h2 id="output">Output</h2>
+<p>The terminal shows live progress, elapsed time and colored step results. Redirected output has no
+  ANSI styling, and <code>NO_COLOR</code> turns color off.</p>
+
+<h2 id="agent-skill">Agent skill</h2>
+<p><code>tkn-innerloop skills show</code> prints the skill for coding agents.
+  <code>tkn-innerloop skills install</code> copies it into <code>.agents/skills/</code> in the current
+  repository, or into <code>--target</code>.</p>
+</article>
+</main>
+
+<footer class="foot wrap">
+  <p>tkn-innerloop is open source under the Apache License 2.0.
+    <a href="https://github.com/openshift-pipelines/tkn-innerloop">Source on GitHub</a>.</p>
+</footer>
+
+<script src="aniflow/aniflow.min.js"></script>
+<script>
+  Aniflow.diagrams({
+    root: "#guide",
+    mermaid: "aniflow/mermaid.min.js",
+    resolveImage: (value) => value.startsWith("/icons/") ? new URL("aniflow" + value, location.href).href : null,
+  });
+</script>
+</body>
+</html>

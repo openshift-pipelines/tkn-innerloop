@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-labelledby="t">
+  <title id="t">Your checkout is mounted at /workspace in Podman or Docker, or used in place with --runtime host</title>
+  <style>
+    .ink { stroke: #172231; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+    .mono { font: 600 14px "Red Hat Mono", ui-monospace, monospace; }
+    .small { font: 500 12px "Red Hat Mono", ui-monospace, monospace; }
+    .label { font: 700 17px "Red Hat Display", system-ui, sans-serif; }
+    .flow { stroke-dasharray: 3 10; animation: flow 1s linear infinite; }
+    @keyframes flow { to { stroke-dashoffset: -13; } }
+    .bob { animation: bob 3s ease-in-out infinite; }
+    @keyframes bob { 50% { transform: translateY(-5px); } }
+    @media (prefers-reduced-motion: reduce) { .flow, .bob { animation: none; } }
+  </style>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.3" fill="#d3dae1"/></pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 L9 5 L1 9 Z" fill="#172231"/></marker>
+  </defs>
+  <rect width="800" height="320" fill="#fff"/>
+  <rect width="800" height="320" fill="url(#dots)"/>
+
+  <g transform="translate(40 116)">
+    <path class="ink" d="M0 12 A8 8 0 0 1 8 4 H62 L76 18 H184 A8 8 0 0 1 192 26 V92 A8 8 0 0 1 184 100 H8 A8 8 0 0 1 0 92 Z" fill="#fde9b8"/>
+    <text class="label" x="18" y="64" fill="#172231">your checkout</text>
+  </g>
+
+  <path class="flow" d="M240 140 C320 140 330 70 430 70" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <path class="flow" d="M240 166 H430" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <path class="flow" d="M240 192 C320 192 330 262 430 262" stroke="#172231" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+  <text class="small" x="296" y="158" fill="#536173">/workspace</text>
+
+  <g class="bob">
+    <rect class="ink" x="444" y="34" width="316" height="72" rx="12" fill="#dce8f6"/>
+    <path d="M466 48 V92 M486 48 V92 M506 48 V92" stroke="#2d6cb5" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+    <text class="label" x="530" y="66" fill="#172231">Podman</text>
+    <text class="small" x="530" y="88" fill="#536173">auto picks it first</text>
+  </g>
+  <g class="bob" style="animation-delay:.4s">
+    <rect class="ink" x="444" y="130" width="316" height="72" rx="12" fill="#dce8f6"/>
+    <path d="M466 144 V188 M486 144 V188 M506 144 V188" stroke="#2d6cb5" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+    <text class="label" x="530" y="162" fill="#172231">Docker</text>
+    <text class="small" x="530" y="184" fill="#536173">files given back to you</text>
+  </g>
+  <g class="bob" style="animation-delay:.8s">
+    <rect class="ink" x="444" y="226" width="316" height="72" rx="12" fill="#fff"/>
+    <rect class="ink" x="462" y="244" width="42" height="26" rx="4" fill="#172231"/>
+    <path class="ink" d="M456 274 H510 L506 280 H460 Z" fill="#fff" stroke-width="2.5"/>
+    <text class="label" x="530" y="258" fill="#172231">Host</text>
+    <text class="small" x="530" y="280" fill="#b8322a">--runtime host, review first</text>
+  </g>
+</svg>

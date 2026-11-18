@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-labelledby="t">
+  <title id="t">Clone, push, deploy and finally tasks stay on the cluster; lint, test and codespell run on your laptop</title>
+  <style>
+    .ink { stroke: #172231; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+    .mono { font: 600 14px "Red Hat Mono", ui-monospace, monospace; }
+    .label { font: 700 16px "Red Hat Display", system-ui, sans-serif; }
+    .up { stroke-dasharray: 3 9; animation: up 1.1s linear infinite; }
+    .down { stroke-dasharray: 3 9; animation: down 1.1s linear infinite; }
+    @keyframes up { to { stroke-dashoffset: 12; } }
+    @keyframes down { to { stroke-dashoffset: -12; } }
+    @media (prefers-reduced-motion: reduce) { .up, .down { animation: none; } }
+  </style>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.3" fill="#d3dae1"/></pattern>
+  </defs>
+  <rect width="800" height="320" fill="#fff"/>
+  <rect width="800" height="320" fill="url(#dots)"/>
+
+  <rect class="ink" x="40" y="22" width="720" height="62" rx="14" fill="#dce8f6"/>
+  <path class="ink" fill="#fff" d="M66 68 A12 12 0 0 1 70 46 A18 18 0 0 1 104 42 A14 14 0 0 1 120 60 A9 9 0 0 1 116 68 Z"/>
+  <text class="label" x="136" y="60" fill="#172231">Stays on the cluster</text>
+
+  <rect class="ink" x="40" y="236" width="720" height="62" rx="14" fill="#fde9b8"/>
+  <rect class="ink" x="66" y="252" width="44" height="28" rx="4" fill="#172231"/>
+  <path class="ink" d="M58 284 H118 L114 290 H62 Z" fill="#fff" stroke-width="2.5"/>
+  <text class="label" x="136" y="274" fill="#172231">Runs on your laptop</text>
+
+  <g stroke="#2d6cb5" stroke-width="3.5" fill="none" stroke-linecap="round">
+    <path class="up" d="M94 140 V90"/>
+    <path class="up" d="M490 140 V90"/>
+    <path class="up" d="M590 140 V90"/>
+    <path class="up" d="M690 140 V90"/>
+  </g>
+  <g stroke="#d99a00" stroke-width="3.5" fill="none" stroke-linecap="round">
+    <path class="down" d="M194 184 V230"/>
+    <path class="down" d="M294 184 V230"/>
+    <path class="down" d="M392 184 V230"/>
+  </g>
+
+  <g class="ink">
+    <rect x="48" y="140" width="92" height="44" rx="10" fill="#fff"/>
+    <rect x="148" y="140" width="92" height="44" rx="10" fill="#f2b630"/>
+    <rect x="248" y="140" width="92" height="44" rx="10" fill="#f2b630"/>
+    <rect x="346" y="140" width="92" height="44" rx="10" fill="#f2b630"/>
+    <rect x="444" y="140" width="92" height="44" rx="10" fill="#fff"/>
+    <rect x="544" y="140" width="92" height="44" rx="10" fill="#fff"/>
+    <rect x="644" y="140" width="92" height="44" rx="10" fill="#fff"/>
+  </g>
+  <g class="mono" fill="#172231" text-anchor="middle">
+    <text x="94" y="167">clone</text>
+    <text x="194" y="167">lint</text>
+    <text x="294" y="167">test</text>
+    <text x="392" y="167">codespell</text>
+    <text x="490" y="167">push</text>
+    <text x="590" y="167">deploy</text>
+    <text x="690" y="167">finally</text>
+  </g>
+</svg>
