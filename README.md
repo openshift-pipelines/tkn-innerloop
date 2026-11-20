@@ -56,13 +56,17 @@ uvx --from git+https://github.com/openshift-pipelines/tkn-innerloop tkn-innerloo
 Run it from the repository you want to check:
 
 ```sh
-tkn-innerloop run                                  # the only pipeline in .tekton/
+tkn-innerloop inspect                               # advisory report; nothing runs
+tkn-innerloop run                                  # assess .tekton/ and run eligible source steps
 tkn-innerloop run .tekton/go.yaml
 tkn-innerloop run .tekton/linter.yaml --steps codespell,yamllint
 ```
 
-`run` executes the scripts the agent edited without stopping for review. To
-read the plan first, generate it, look at the diff, then run it:
+Bare `run` performs the same repository assessment as `inspect`, then runs
+eligible shell scripts or explicit commands unchanged. It does not require a
+prior inspection, fetch remote definitions, or reuse cached conversion plans.
+Run it only in a checkout you trust. With a pipeline file argument, `run`
+still converts and caches a plan. To review that plan before running it:
 
 ```sh
 tkn-innerloop generate .tekton/linter.yaml --steps codespell -o /tmp/plan.json

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
@@ -63,27 +64,34 @@ class Definitions:
     The repository is only scanned when a reference is not defined in the pipeline file.
     """
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, documents: Iterable[tuple[str, dict]] | None = None):
         self.root = root
+        self.documents = documents
         self._index: dict[tuple[str, str], list[tuple[str, dict]]] | None = None
+
+    def _repo_documents(self) -> Iterable[tuple[str, dict]]:
+        for name in repo_yaml_files(self.root):
+            try:
+                text = (self.root / name).read_text()
+                if not DEFINITION_KIND.search(text):
+                    continue
+                documents = list(yaml.safe_load_all(text))
+            except (OSError, UnicodeDecodeError, yaml.YAMLError):
+                continue
+            for document in documents:
+                if isinstance(document, dict):
+                    yield name, document
 
     def index(self) -> dict[tuple[str, str], list[tuple[str, dict]]]:
         if self._index is None:
             self._index = {}
-            for name in repo_yaml_files(self.root):
-                try:
-                    text = (self.root / name).read_text()
-                    if not DEFINITION_KIND.search(text):
-                        continue
-                    documents = list(yaml.safe_load_all(text))
-                except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            for name, document in self._repo_documents() if self.documents is None else self.documents:
+                if document.get("kind") not in ("Pipeline", "Task", "StepAction"):
                     continue
-                for document in documents:
-                    if not isinstance(document, dict) or document.get("kind") not in ("Pipeline", "Task", "StepAction"):
-                        continue
-                    title = (document.get("metadata") or {}).get("name")
-                    if isinstance(title, str) and title:
-                        self._index.setdefault((document["kind"], title), []).append((name, document))
+                metadata = document.get("metadata")
+                title = metadata.get("name") if isinstance(metadata, dict) else None
+                if isinstance(title, str) and title:
+                    self._index.setdefault((document["kind"], title), []).append((name, document))
         return self._index
 
     def find(self, kind: str, name: str, own: str, own_documents: list) -> tuple[dict, str]:

@@ -35,6 +35,7 @@
   <ol>
     <li><a href="#how-a-run-works">How a run works</a></li>
     <li><a href="#the-agent-and-the-model">The agent and the model</a></li>
+    <li><a href="#assessing-a-repository">Assessing a repository</a></li>
     <li><a href="#choosing-steps">Choosing steps</a></li>
     <li><a href="#reviewing-before-running">Reviewing before running</a></li>
     <li><a href="#run-it-before-each-commit">Run it before each commit</a></li>
@@ -106,9 +107,56 @@
   malformed answer is sent back twice with the exact error. A step the agent leaves unresolved is not
   retried.</p>
 
+<h2 id="assessing-a-repository">Assessing a repository</h2>
+<pre>tkn-innerloop inspect [PATH] [--model MODEL]</pre>
+<p>With a directory or no argument, <code>inspect</code> looks recursively under <code>.tekton/</code> for PipelineRuns in
+  <code>.yaml</code> and <code>.yml</code> files. Reports use the repository-relative path
+  and one-based YAML document number, with the run name when available. A bad document
+  does not stop assessment of other runs. A file argument lists source steps without calling Pi. The directory defaults to the current Git
+  working tree. <code>--model</code> follows the same defaults as generation.</p>
+<p>Pi gets the workflow, full step inventory and known blockers, with all tools disabled.
+  Local definitions can be read by the CLI, but remote references are not fetched.
+  The command skips symbolic links and credential files, redacts recognized credential values,
+  and does not fetch secrets. Review manifests for embedded secrets before sending them to a model.
+  No scripts, containers or hooks run, and no plan is saved or cached.</p>
+<ul>
+  <li><code>fully runnable</code>: the full workflow appears feasible locally, accounting for provided steps.</li>
+  <li><code>partly runnable</code>: a subset can give specific local feedback or write a named artifact.</li>
+  <li><code>cluster-only</code>: there is no useful local scope, and the only blockers are known publish or deploy actions.</li>
+  <li><code>unresolved</code>: useful local scope could not be established, for example because a reference is missing or the local runner does not support an input. The report shows why.</li>
+</ul>
+<p>These verdicts are advisory, not proof of execution or safety. Each assessed step cites
+  source evidence or a known blocker. A malformed reply or provider failure is reported
+  separately from verdicts. Exit <code>0</code> means the assessments completed, not that checks
+  passed. Exit <code>1</code> includes no PipelineRuns or a PipelineRun that could not be assessed.</p>
+
+<h3 id="running-eligible-repository-work">Running eligible repository work</h3>
+<pre>tkn-innerloop run [--repo PATH] [--model MODEL]</pre>
+<p>Without a file argument, <code>run</code> performs the same inspection and runs only the eligible
+  native shell scripts or explicit commands, in dependency order and with the source images.
+  It does not need a prior inspection. The CLI checks the exact steps and source hashes and builds
+  a fresh in-memory plan per YAML document. The model cannot edit scripts or supply execution inputs.
+  Use a trusted checkout: its source commands run with access to the working tree.</p>
+<p>The checkout maps to <code>/workspace</code> in containers. A literal <code>workingDir: /workspace</code>
+  requires a task workspace mounted at exactly that path and bound to a declared PipelineRun
+  <code>emptyDir</code> workspace without a subpath. The equivalent <code>$(workspaces.NAME.path)</code>
+  works for the same binding with the default mount or <code>/workspace</code>. For simple literal
+  shell redirections in a known checkout working directory, inspection can report whether a regular
+  input file is present or an output parent exists and is writable on the host. It does not follow
+  symbolic links or read file contents. Missing paths stay unresolved. These observations are not
+  proof that a container user has the same permissions. Host mode maps the
+  working directory to the checkout root and does not forward the caller's environment except
+  <code>PATH</code>. It is not a filesystem sandbox.</p>
+<p>Bare runs leave remote references, redacted inputs, cluster actions and steps requiring unsupported
+  adaptation out of execution. Exit <code>1</code> means an assessment or run failed;
+  <code>2</code> means work remained unresolved or nothing ran; <code>0</code> means eligible work
+  completed and any other steps were intentionally excluded. Independent PipelineRuns still get a
+  chance to run. Use an explicit pipeline file or saved plan for <code>--steps</code> or <code>--env</code>.
+  <code>--refresh</code> applies to explicit pipeline conversion, not bare runs.</p>
+
 <h2 id="choosing-steps">Choosing steps</h2>
 <figure class="guide-art"><img src="img/choosing-steps.svg" alt="Clone, push, deploy and finally tasks stay on the cluster; lint, test and codespell run on your laptop" width="800" height="320" loading="lazy"></figure>
-<p>Without <code>--steps</code>, <code>run</code> chooses the steps itself. These stay on the cluster:</p>
+<p>With an explicit pipeline file but no <code>--steps</code>, <code>run</code> chooses the steps itself. These stay on the cluster:</p>
 <ul>
   <li>steps that use an external reference such as <code>git-clone</code></li>
   <li>steps whose work the local checkout already covers</li>
@@ -127,10 +175,6 @@
 <p><code>--steps</code> replaces the automatic choice. Use the step IDs that <code>inspect</code> prints
   when a step name is ambiguous. A single PipelineRun uses <code>task/step</code> IDs. A file with several
   YAML documents uses <code>pipelinerun/task/step</code>. Empty YAML documents are ignored.</p>
-<p>Without a file argument, <code>run</code> looks in <code>.tekton/</code> and prefers PipelineRuns over
-  Pipelines. It searches the whole repository only when <code>.tekton/</code> has no pipeline at all.
-  When <code>.tekton/</code> has pipelines but none can run locally, it lists each one with the reason.
-  When it finds several, it lists them so you can pass one.</p>
 
 <h2 id="reviewing-before-running">Reviewing before running</h2>
 <figure class="guide-art"><img src="img/review-diff.svg" alt="validate --diff shows each script edit; the CLI checks the structure, and you read the commands" width="800" height="320" loading="lazy"></figure>

@@ -31,7 +31,8 @@ CONFIG_FILE = ".tekton-innerloop.yaml"
 
 def inventory(
     path: Path, root: Path | None = None, definitions: Definitions | None = None,
-    *, pipeline: str | None = None,
+    *, pipeline: str | None = None, documents: list[tuple[int, object]] | None = None,
+    document_number: int | None = None, resolve_bundles: bool = True,
 ) -> dict[str, dict]:
     """Every step of the file's PipelineRuns (or, without any, its Pipelines).
 
@@ -40,8 +41,8 @@ def inventory(
     """
     root = root or guess_root(path)
     definitions = definitions or Definitions(root)
-    own = relative_name(path, root)
-    documents = yaml_documents(path)
+    own = relative_name(path, root) if documents is None else path.relative_to(root).as_posix()
+    documents = yaml_documents(path) if documents is None else documents
     for number, raw in documents:
         if not isinstance(raw, dict) or not isinstance(raw.get("kind"), str) or not raw["kind"]:
             raise ValueError(f"Document {number}: expected a Kubernetes resource with a kind")
@@ -51,12 +52,14 @@ def inventory(
     entries = [(n, raw) for n, raw in documents if raw["kind"] == "PipelineRun"] or [
         (n, raw) for n, raw in documents if raw["kind"] == "Pipeline"
     ]
+    if document_number is not None:
+        entries = [(n, raw) for n, raw in entries if n == document_number]
     if not entries:
         raise ValueError("Expected a PipelineRun or a Pipeline")
     multiple = len(entries) > 1
     hint = (
         "; a Pipelines-as-Code annotation may fetch it, install tkn-pac so tkn pac resolve can"
-        if pac_remote([raw for _, raw in entries])
+        if resolve_bundles and pac_remote([raw for _, raw in entries])
         else ""
     )
     run_names = set()
@@ -83,6 +86,8 @@ def inventory(
                 ref = run_spec["pipelineRef"]
                 name = local_ref(ref, "Pipeline")
                 if name is None:
+                    if not resolve_bundles:
+                        raise LookupError(ref_note(ref, "Pipeline"))
                     try:
                         fetched = bundle_definition(ref, "Pipeline")
                     except BundleError as exc:
@@ -97,6 +102,8 @@ def inventory(
                     try:
                         pipeline_doc, where = definitions.find("Pipeline", name, own, own_documents)
                     except LookupError as exc:
+                        if not resolve_bundles:
+                            raise
                         raise ValueError(f"Document {number}: pipelineRef {name}: {exc}{hint}") from None
                 spec = mapping(pipeline_doc.get("spec"), f"Pipeline {name or where} spec")
                 if where != own:
@@ -124,7 +131,9 @@ def inventory(
             note = None
             if not task_spec and task.get("taskRef"):
                 name = local_ref(task["taskRef"], "Task")
-                if name is None:
+                if name is None and not resolve_bundles:
+                    note = ref_note(task["taskRef"])
+                elif name is None:
                     try:
                         fetched = bundle_definition(task["taskRef"], "Task")
                     except BundleError as exc:
@@ -165,7 +174,9 @@ def inventory(
                 if not whole_task and step.get("ref") and not step.get("image"):
                     name = local_ref(step["ref"], "StepAction")
                     action_doc = None
-                    if name is None:
+                    if name is None and not resolve_bundles:
+                        step_note = ref_note(step["ref"], "StepAction")
+                    elif name is None:
                         try:
                             fetched = bundle_definition(step["ref"], "StepAction")
                         except BundleError as exc:
@@ -191,7 +202,7 @@ def inventory(
                         }
                         if where != own:
                             step_defined.add(where)
-                if not trusted_artifact(step):
+                if document_number is None and not trusted_artifact(step):
                     step = bind_restored(step, restored)
                 step = bind_image(step, values)
                 cache = None if whole_task else tekton_cache(step, action["name"] if action else None)
@@ -211,9 +222,10 @@ def inventory(
                     run_sources[key]["cache"] = cache
                 if step_note:
                     run_sources[key]["reference_note"] = step_note
-        local_caches(run_sources, pipeline or own, run_name if isinstance(run_name, str) else "")
+        if document_number is None:
+            local_caches(run_sources, pipeline or own, run_name if isinstance(run_name, str) else "")
         found.update(run_sources)
-    if pac_profile([raw for _, raw in entries]):
+    if document_number is None and pac_profile([raw for _, raw in entries]):
         found = bind_pac(found)
     return found
 
@@ -230,6 +242,8 @@ def plan_scope(sources: dict[str, dict], selection: str | None) -> list[str]:
     return ids
 
 
+PUBLISH_OR_DEPLOY = "publishes or deploys"
+SKIP_LOCAL = "marked skip-local"
 CLUSTER_ONLY = re.compile(
     r"\b(?:git\s+push|(?:docker|podman|buildah|skopeo)\s+push|cosign|"
     r"kubectl\s+(?:apply|create|delete|patch)|oc\s+(?:apply|create|delete|patch)|"
@@ -286,14 +300,14 @@ def auto_scope(
             left[key] = PROVIDED
         elif not step.get("image"):
             left[key] = "external reference"
-        elif UNRESOLVED_IMAGE.search(step["image"]):
+        elif not isinstance(step["image"], str) or UNRESOLVED_IMAGE.search(step["image"]):
             left[key] = "image has an unresolved substitution"
         elif step.get("script") is None and not step.get("command"):
             left[key] = "runs the image entrypoint"
         elif "(skip-local)" in hints:
-            left[key] = "marked skip-local"
+            left[key] = SKIP_LOCAL
         elif any(pattern.search(text) for pattern in patterns):
-            left[key] = "publishes or deploys"
+            left[key] = PUBLISH_OR_DEPLOY
         else:
             keep.append(key)
     return keep, left
