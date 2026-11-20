@@ -14,6 +14,7 @@ from pathlib import Path
 import yaml
 
 from .agent import agent_model, build_plan
+from .assess import assess, assess_repository, render_assessment
 from .bundles import input_label
 from .caches import CACHED, clean_caches
 from .inventory import auto_scope, choose_pipeline, cluster_patterns, inventory, plan_scope
@@ -124,7 +125,7 @@ def ensure_plan(
 
 
 def run_command(args: argparse.Namespace) -> int:
-    """run: a saved plan.json runs as is; a pipeline (or nothing) is converted if needed first.
+    """Run a saved plan, convert an explicit file, or assess the repository first.
 
     Exit 0: every runnable check passed. 1: a check failed. 2: all passed but some
     steps stayed unresolved, so the result is incomplete.
@@ -132,6 +133,8 @@ def run_command(args: argparse.Namespace) -> int:
     if args.plan and args.plan.endswith(".json"):
         return run_plan(args)
     root = repo_root(Path(args.repo))
+    if not args.plan:
+        return run_repository(args, root.resolve())
     pipeline = choose_pipeline(root, args.plan)
     relative = str(pipeline.relative_to(root))
     heading("Tekton inner-loop", relative)
@@ -182,6 +185,43 @@ def run_command(args: argparse.Namespace) -> int:
     return code
 
 
+def run_repository(args: argparse.Namespace, root: Path) -> int:
+    """Run independently validated documents without reusing explicit plan caches."""
+    if args.steps is not None or args.env:
+        raise ValueError("--steps and --env require an explicit pipeline file or saved plan")
+    reports, issues = assess_repository(root, args.model, args.convert_timeout)
+    if not reports:
+        print("No PipelineRuns found under .tekton/; nothing ran")
+        return 1 if issues else 2
+    failed, incomplete, completed = bool(issues), False, False
+    for report in reports:
+        render_assessment(report)
+        if report.error:
+            failed = True
+            print("  Run: assessment failed; nothing ran", flush=True)
+            continue
+        incomplete |= report.unresolved
+        scope = report.native
+        if scope is None:
+            print("  Run: no eligible local steps", flush=True)
+            continue
+        local_args = argparse.Namespace(**{**vars(args), "repo": str(root)})
+        try:
+            plan = build_plan(root / scope.pipeline, root, list(scope.dependencies), args.model,
+                              args.convert_timeout, native=scope)
+            code = run_plan(local_args, native=(scope, plan))
+        except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+            print(f"  Run: failed ({str(exc)!r})", flush=True)
+            failed = True
+            continue
+        completed |= code == 0
+        failed |= code == 1
+        incomplete |= code == 2
+        label = {0: "completed eligible work", 1: "failed", 2: "incomplete"}[code]
+        print(f"  Run: {label}", flush=True)
+    return 1 if failed else 2 if incomplete or not completed else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="tkn-innerloop",
@@ -189,9 +229,10 @@ def main() -> int:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
     inspect = sub.add_parser(
-        "inspect", help="List source steps without guessing whether they run locally"
+        "inspect", help="Assess a repository's PipelineRuns or list the source steps in a file"
     )
-    inspect.add_argument("file")
+    inspect.add_argument("path", nargs="?", default=".", type=Path, help="Repository directory (default: .) or pipeline file")
+    inspect.add_argument("--model", metavar="MODEL", help="Pi model for repository inspection")
     gen = sub.add_parser(
         "generate",
         help="Ask an agent to inspect repository files and produce a JSON plan",
@@ -216,12 +257,12 @@ def main() -> int:
     )
     run = sub.add_parser(
         "run",
-        help="Run local checks: converts the pipeline once (cached), then executes it",
+        help="Run eligible repository work, an explicit pipeline, or a saved plan",
     )
     run.add_argument(
         "plan",
         nargs="?",
-        help="pipeline .yaml (default: the only one in .tekton/, else in the repository) or a saved plan .json",
+        help="pipeline YAML or saved plan JSON (default: assess PipelineRuns under .tekton/ and run eligible work)",
     )
     run.add_argument("--repo", default=".")
     run.add_argument(
@@ -243,12 +284,12 @@ def main() -> int:
         help="Explicitly forward a required or optional environment variable",
     )
     run.add_argument("--timeout", type=int, default=180, help="Seconds allowed per check")
-    run.add_argument("--model", help="Pi model used when a plan has to be generated")
+    run.add_argument("--model", help="Pi model for repository assessment or explicit plan generation")
     run.add_argument(
-        "--convert-timeout", type=int, default=300, help="Seconds allowed for conversion"
+        "--convert-timeout", type=int, default=300, help="Seconds allowed for each assessment or explicit conversion"
     )
     run.add_argument(
-        "--refresh", action="store_true", help="Regenerate the cached plan"
+        "--refresh", action="store_true", help="Regenerate the cached plan for an explicit pipeline file"
     )
     cache = sub.add_parser("cache", help="Manage the local caches that replace tekton-caches steps")
     cache.add_argument("action", choices=("clean",))
@@ -261,7 +302,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.cmd == "inspect":
-            inspect_pipeline(Path(args.file))
+            if args.path.is_dir():
+                return assess(args.path, args.model)
+            inspect_pipeline(args.path)
         elif args.cmd == "generate":
             return generate(args)
         elif args.cmd == "validate":

@@ -17,8 +17,9 @@ from pathlib import Path
 
 from .inventory import inventory
 from .konflux import provided_by_checkout
+from .native import NativeScope
 from .pac import pac_profile
-from .plan import PlanRejected, assemble_plan
+from .plan import PlanRejected, assemble_plan, native_plan
 from .ui import style
 
 THINKING_SUFFIX = re.compile(r":(?:off|minimal|low|medium|high|xhigh|max)$")
@@ -265,7 +266,7 @@ def plan_prompt(relative: str, sources: dict, selected_ids: list[str], pac: bool
     return prompt
 
 
-def pi_command(model: str) -> list[str]:
+def pi_command(model: str, *, assessment: bool = False) -> list[str]:
     """The agent command; the prompt goes on stdin, since inlined pipelines exceed argv limits."""
     return [
         "pi",
@@ -274,14 +275,13 @@ def pi_command(model: str) -> list[str]:
         "json",
         "--no-session",
         "--no-extensions",
-        "--no-mcp",
+        "--no-approve",
         "--no-skills",
         "--no-context-files",
         "--no-prompt-templates",
         "--no-themes",
         "--offline",
-        "--tools",
-        "read,grep,find,ls",
+        *(["--no-tools"] if assessment else ["--tools", "read,grep,find,ls"]),
         # A model:level suffix picks the thinking level; some models reject "off".
         *([] if THINKING_SUFFIX.search(model) else ["--thinking", "off"]),
         "--model",
@@ -297,6 +297,7 @@ def build_plan(
     timeout: float,
     source: Path | None = None,
     extra_inputs: tuple[str, ...] | list[str] = (),
+    *, native: NativeScope | None = None,
 ) -> dict:
     """Ask the agent; if the answer is malformed or invalid, show it the error and ask again.
 
@@ -304,6 +305,10 @@ def build_plan(
     the agent's judgment and is returned as is. Timeouts and agent failures are not retried.
     """
     relative = str(path.relative_to(root))
+    if native is not None:
+        if relative != native.pipeline or source is not None or extra_inputs or set(selected_ids) != native.dependencies.keys():
+            raise ValueError("Native plan inputs do not match the assessed scope")
+        return native_plan(root, native)
     source = source or path
     resolved = source.name if source != path else None
     sources = inventory(source, root, pipeline=relative)

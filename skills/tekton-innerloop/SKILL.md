@@ -1,6 +1,6 @@
 ---
 name: tekton-innerloop
-description: Run a repository's Tekton checks locally. One command converts a PipelineRun or Pipeline with an agent (cached), then runs it in Podman or Docker without a Kubernetes cluster; use generate and validate to review the plan first.
+description: Assess a repository's Tekton PipelineRuns without executing them, or convert and run checks locally in Podman or Docker. Use generate and validate to review an execution plan first.
 ---
 
 # Tekton inner-loop validation
@@ -9,19 +9,43 @@ Use the repository's Tekton commands to check local edits. An agent decides what
 can run locally and explains the adaptations. The CLI validates the resulting
 plan and executes it without calling a model during the edit loop.
 
+## Assess before choosing a workflow
+
+```sh
+tkn-innerloop inspect [PATH] [--model MODEL]
+```
+
+With no argument or a directory, `inspect` recursively finds PipelineRuns in `.tekton/` YAML files. Report each
+verdict with its path and document number: `fully runnable`, `partly runnable`
+(include the useful local feedback or named artifact), `cluster-only` (only
+known publish or deploy blockers), or `unresolved` (include the reason, such as
+a missing reference or unsupported local runner input). Report malformed
+input, rejected replies and model failures separately. Do not treat any verdict
+as a passed check. Pi sees workflow source and known blockers but has no tools.
+No remote definitions or secrets are fetched, and no plan, script or container
+runs. Check manifests for embedded credentials before sending them to a model.
+
 ## The one command
 
 ```sh
-tkn-innerloop run .tekton/go.yaml            # or just `run` if the repository has one pipeline
+tkn-innerloop run                           # inspect and run eligible source steps across .tekton/
+tkn-innerloop run .tekton/go.yaml            # convert and execute one explicit pipeline file
 tkn-innerloop run .tekton/linter.yaml --steps codespell,yamllint
 ```
 
-`run` chooses the local scope, converts when there is no current plan, caches the
-plan outside the working tree, and executes it. Exit `0`: passed.
-`1`: a check failed. `2`: passed, but some steps were unresolved, so tell the user
-the result is incomplete. It does not stop for review, so read the plan first
-(`generate`, `validate --diff`, below) when the scripts matter. Run it after every
-edit and report the exit code and the failing check output.
+Bare `run` performs a fresh repository inspection without needing an earlier
+`inspect`. It validates a per-document native plan in memory and executes only
+eligible source scripts or commands without agent edits. Report each run's
+outcome. Exit `0` means eligible work completed with only intentional exclusions,
+`1` means a failure, and `2` means unresolved work or nothing ran. Use it only in
+a trusted checkout. `/workspace` requires an exact task workspace mount backed
+by a declared `emptyDir` binding without a subpath. Simple literal redirections
+can use host checkout metadata without reading file contents or following
+symlinks. Missing inputs or output directories stay unresolved.
+
+An explicit pipeline file still uses the cached conversion plan. An explicit
+saved plan still runs as before. Use an explicit file or plan for `--steps`
+or `--env`. Review adaptations first with `generate` and `validate --diff`.
 
 ## Convert once (to review first)
 

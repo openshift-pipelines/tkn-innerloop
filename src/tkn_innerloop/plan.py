@@ -8,17 +8,18 @@ import re
 import shutil
 import subprocess
 import textwrap
+from graphlib import TopologicalSorter
 from pathlib import Path
 
 from .bundles import bundle_path
 from .inventory import inventory
+from .native import RUNNER_VARS, NativeScope, native_host_env, native_step
 from .pac import PAC_BINDINGS, PAC_UNBOUND, RESOLVE_FORMAT, pac_profile, pac_remote, tkn_pac_version
 from .paths import cache_dir, cache_name, digest, home_relative, source_path, write_cache
 from .tekton import SHELLS, SUBSTITUTION, TEKTON_UNBOUND, UNRESOLVED_IMAGE, adapted_script, yaml_documents
 from .ui import stage, step_row, style
 
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-RUNNER_VARS = ("WORKSPACE", "BASE_SHA", "HEAD_SHA", "HEAD_REF", "BASE_REF", "RESULTS", "CACHES")
 PLAN_VERSION = 8
 
 
@@ -46,7 +47,7 @@ def plan_sources(plan: dict, root: Path) -> dict[str, dict]:
     )
 
 
-def validate_plan(plan: dict, root: Path) -> dict:
+def validate_plan(plan: dict, root: Path, *, native: NativeScope | None = None) -> dict:
     if not isinstance(plan, dict) or not isinstance(plan.get("version"), int):
         raise ValueError(f"Expected an execution plan with version {PLAN_VERSION}")
     if plan["version"] != PLAN_VERSION:
@@ -62,10 +63,18 @@ def validate_plan(plan: dict, root: Path) -> dict:
     inputs = plan.get("inputs")
     if not isinstance(inputs, dict) or pipeline not in inputs or (resolved and resolved not in inputs):
         raise ValueError("Plan inputs must include the pipeline and its SHA-256")
-    for name, expected in inputs.items():
-        if digest(plan_input(root, name, resolved)) != expected:
-            raise ValueError(f"Stale plan: {name} changed; regenerate the plan")
-    sources = plan_sources(plan, root)
+    if native is None:
+        if "document" in plan:
+            raise ValueError("Document plans must be built in memory by repository run")
+        for name, expected in inputs.items():
+            if digest(plan_input(root, name, resolved)) != expected:
+                raise ValueError(f"Stale plan: {name} changed; regenerate the plan")
+        sources = plan_sources(plan, root)
+    else:
+        if pipeline != native.pipeline or plan.get("document") != native.document or resolved or inputs != native.inputs:
+            raise ValueError("Plan does not belong to the assessed document")
+        native.verify(root)
+        sources = native.sources
     missing = definition_files(sources) - set(inputs)
     if missing:
         raise ValueError(
@@ -83,6 +92,8 @@ def validate_plan(plan: dict, root: Path) -> dict:
         or set(ids) != set(sources)
     ):
         raise ValueError("Plan must account for every source step exactly once")
+    if native is not None and {step["id"] for step in steps if step.get("decision") == "run"} != native.dependencies.keys():
+        raise ValueError("Native plan does not match the assessed scope")
     for step in steps:
         key = step["id"]
         if step.get("decision") not in ("run", "skip", "unresolved"):
@@ -102,6 +113,12 @@ def validate_plan(plan: dict, root: Path) -> dict:
         ):
             raise ValueError(f"{key}: depends_on must name earlier runnable steps")
         original = sources[key]["step"]
+        if native is not None and (
+            step.get("edits") != [] or step.get("required_env") != [] or step.get("optional_env")
+            or dependencies != list(native.dependencies[key])
+            or any(step.get(field) != value for field, value in native_step(sources[key]).items())
+        ):
+            raise ValueError(f"{key}: native plan cannot change source commands or supply extra inputs")
         hints = " ".join(
             str(owner.get(field, ""))
             for owner in (original, sources[key]["task_context"])
@@ -182,6 +199,7 @@ def validate_plan(plan: dict, root: Path) -> dict:
             text=True,
             capture_output=True,
             check=False,
+            env=native_host_env() if native is not None else None,
         )
         if syntax.returncode:
             raise ValueError(f"{key}: invalid shell syntax: {syntax.stderr.strip()}")
@@ -271,6 +289,7 @@ def assemble_plan(
     selected_ids: list[str],
     resolved: str | None = None,
     extra_inputs: tuple[str, ...] | list[str] = (),
+    *, native: NativeScope | None = None,
 ) -> dict:
     """Turn the agent's JSON into a validated plan; any structural problem is PlanRejected."""
     try:
@@ -290,8 +309,9 @@ def assemble_plan(
         plan = {
             "version": PLAN_VERSION,
             "pipeline": relative,
+            **({"document": native.document} if native is not None else {}),
             **({"resolved": resolved} if resolved else {}),
-            "inputs": {
+            "inputs": dict(native.inputs) if native is not None else {
                 name: digest(plan_input(root, name, resolved)) for name in sorted(known)
             },
             "steps": proposed.get("steps"),
@@ -317,7 +337,7 @@ def assemble_plan(
                 step["script"] = adapted_script(
                     sources[step["id"]]["step"], step.get("edits")
                 )
-        validate_plan(plan, root)
+        validate_plan(plan, root, native=native)
         if any(
             s["decision"] == "run" and s["id"] not in selected_ids
             for s in plan["steps"]
@@ -327,6 +347,18 @@ def assemble_plan(
         raise PlanRejected(str(exc)) from exc
     plan["scope"] = list(selected_ids)
     return plan
+
+
+def native_plan(root: Path, scope: NativeScope) -> dict:
+    """Build a validated plan from the exact eligible source steps, in dependency order."""
+    steps = [
+        {"id": key, "decision": "run", "reason": "Native source command",
+         **native_step(scope.sources[key]), "image": scope.sources[key]["step"]["image"],
+         "required_env": [], "depends_on": list(scope.dependencies[key]), "edits": [], "adaptations": []}
+        for key in TopologicalSorter(scope.dependencies).static_order()
+    ]
+    return assemble_plan({"inputs": [], "steps": steps}, root, scope.pipeline, scope.sources,
+                         list(scope.dependencies), native=scope)
 
 
 def plan_source(root: Path, pipeline: Path, refresh: bool = False) -> tuple[Path, list[str]]:

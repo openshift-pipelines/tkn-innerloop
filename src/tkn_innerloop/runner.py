@@ -17,8 +17,9 @@ import uuid
 from pathlib import Path
 
 from .caches import prepare_caches, shared_tool_caches
+from .native import RUNNER_VARS, NativeScope, native_host_env
 from .paths import cache_dir
-from .plan import RUNNER_VARS, load_plan, plan_sources
+from .plan import load_plan, plan_sources, validate_plan
 from .repo import default_base, git, repo_root
 from .runtime import cache_image_id, hand_back_ownership, local_image_id, resolve_runtime
 from .tekton import select_steps
@@ -134,7 +135,7 @@ def continues_on_error(source: dict) -> str | None:
     return None
 
 
-def run_plan(args: argparse.Namespace) -> int:
+def run_plan(args: argparse.Namespace, *, native: tuple[NativeScope, dict] | None = None) -> int:
     """Run a plan's checks with a fresh $RESULTS directory, removed afterwards."""
     cache = cache_dir(repo_root(Path(args.repo)))
     cache.mkdir(parents=True, exist_ok=True)
@@ -145,7 +146,7 @@ def run_plan(args: argparse.Namespace) -> int:
         # Images may run as any user, which rootless podman maps to a uid other than ours.
         results.chmod(0o777)
         try:
-            return run_checks(args, results)
+            return run_checks(args, results, native=native)
         finally:
             if args.runtime == "podman" and os.getuid() != 0:
                 # A non-root image user maps to a subuid the host user cannot delete as.
@@ -155,9 +156,16 @@ def run_plan(args: argparse.Namespace) -> int:
                 )
 
 
-def run_checks(args: argparse.Namespace, results: Path) -> int:
+def run_checks(
+    args: argparse.Namespace, results: Path, *, native: tuple[NativeScope, dict] | None = None,
+) -> int:
     root = repo_root(Path(args.repo))
-    plan = load_plan(Path(args.plan), root)
+    if native is None:
+        plan = load_plan(Path(args.plan), root)
+    else:
+        document, plan = native
+        root = root.resolve()
+        validate_plan(plan, root, native=document)
     scope = select_steps(plan["steps"], args.steps)
     unresolved = [s for s in scope if s["decision"] == "unresolved"]
     if unresolved:
@@ -190,7 +198,7 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
         )
     if forwarded - required - optional:
         raise ValueError("Only required_env or optional_env variables may be forwarded")
-    sources = plan_sources(plan, root)
+    sources = plan_sources(plan, root) if native is None else native[0].sources
     host = args.runtime == "host"
     pinned_images, shared_uids = {}, {}
     if not host:
@@ -201,6 +209,7 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
     )
     if args.runtime == "host":
         print(
+            "Host mode uses local tools and is not a filesystem sandbox." if native is not None else
             "Host mode uses local tool versions and has access to your host environment.",
             flush=True,
         )
@@ -223,7 +232,8 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
             )
             after_ignored.append(step["id"])
             continue
-        broken = [name for name in step["depends_on"] if name in failed or name in not_run]
+        broken = [name for name in step["depends_on"] if name in failed or name in not_run
+                  or (native is not None and name in after_ignored)]
         if broken:
             print(
                 style(
@@ -268,6 +278,10 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
         ]
         env.update({name: os.environ[name] for name in passed_optional})
         working_dir = expand(step["working_dir"], bindings)
+        if native is not None:
+            checkout_dir = Path(expand(step["working_dir"], {**bindings, "WORKSPACE": str(root)})).resolve()
+            if not checkout_dir.is_relative_to(root) or not checkout_dir.is_dir():
+                raise ValueError(f"{step['id']}: working directory must exist inside the checkout")
         container_name = f"tkn-innerloop-{uuid.uuid4().hex}"
         original = sources[step["id"]]["step"]
         shell_args = (
@@ -275,7 +289,7 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
         )
         if args.runtime == "host":
             cmd = [step["shell"], *shell_args]
-            process_env = {**os.environ, **env}
+            process_env = {**os.environ, **env} if native is None else {**native_host_env(), **env}
             cwd = working_dir
         else:
             cmd = [
@@ -312,6 +326,8 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
         step_start = time.monotonic()
         started = results / STARTED
         started.unlink(missing_ok=True)
+        if native is not None:
+            native[0].verify(root)
         proc = subprocess.Popen(
             cmd,
             cwd=cwd,
@@ -351,6 +367,8 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
                 proc.communicate()
             hand_back_ownership(args.runtime, root, step, results, image_id or image)
             if isinstance(interrupted, KeyboardInterrupt):
+                if native is not None:
+                    raise
                 print(
                     style(f"  ✗ {step['id']}: interrupted", "1;31", sys.stderr),
                     file=sys.stderr,
@@ -426,4 +444,4 @@ def run_checks(args: argparse.Namespace, results: Path) -> int:
             "2",
         )
     )
-    return 0
+    return 2 if native is not None and (after_ignored or not_run) else 0
